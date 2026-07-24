@@ -37,9 +37,9 @@ catalog_definition = (
 definition = json.loads(catalog_definition.read_text(encoding="utf-8"))["definitions"][0]
 
 assert profiles["schema_version"] == 1
-assert profiles["default_profile"] == "world_ultrawide_4k30_140"
+assert profiles["default_profile"] == "world_ultrawide_4k30_130"
 assert list(profiles["profiles"]) == [
-    "world_ultrawide_4k30_140",
+    "world_ultrawide_4k30_130",
     "calibration_standard_720p20",
 ]
 
@@ -54,7 +54,7 @@ assert "<rtpPort>$(arg media_rtp_port)</rtpPort>" in xacro
 assert "<controlSocket>$(arg media_control_socket)</controlSocket>" in xacro
 assert "libgazebo_ros_camera.so" not in xacro
 
-assert 'name="camera_profile" default="world_ultrawide_4k30_140"' in launch
+assert 'name="camera_profile" default="world_ultrawide_4k30_130"' in launch
 assert "config/world_camera_profiles.yaml" in launch
 for argument in (
     "width",
@@ -76,7 +76,7 @@ assert "camera_profiles_file:=$(arg camera_profiles_file)" in launch
 assert "static:=$(arg static)" in launch
 
 for calibration_launch in (intrinsic, extrinsic):
-    assert 'name="camera_profile" default="world_ultrawide_4k30_140"' in calibration_launch
+    assert 'name="camera_profile" default="world_ultrawide_4k30_130"' in calibration_launch
     assert '<arg name="camera_profile" value="$(arg camera_profile)"/>' in calibration_launch
     assert '<arg name="camera_profiles_file" value="$(arg camera_profiles_file)"/>' in calibration_launch
 

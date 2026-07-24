@@ -47,10 +47,10 @@ class WorldCameraProfilesTest(unittest.TestCase):
     def test_checked_in_profiles_have_a_strict_supported_shape(self):
         document = load_profiles()
         self.assertEqual(document["schema_version"], 1)
-        self.assertEqual(document["default_profile"], "world_ultrawide_4k30_140")
+        self.assertEqual(document["default_profile"], "world_ultrawide_4k30_130")
         self.assertEqual(
             list(document["profiles"]),
-            ["world_ultrawide_4k30_140", "calibration_standard_720p20"],
+            ["world_ultrawide_4k30_130", "calibration_standard_720p20"],
         )
 
         for name, profile in document["profiles"].items():

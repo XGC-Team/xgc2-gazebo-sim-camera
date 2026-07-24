@@ -41,14 +41,14 @@ per-instance launch parameters.
 
 | Profile | Image | Horizontal FOV | H264 average / max / pacing |
 | --- | --- | --- | --- |
-| `world_ultrawide_4k30_140` (default) | 3840×2160 at 30 fps | 140° | 24 / 36 / 72 Mbit/s |
+| `world_ultrawide_4k30_130` (default) | 3840×2160 at 30 fps | 130° | 24 / 36 / 72 Mbit/s |
 | `calibration_standard_720p20` | 1280×720 at 20 fps | 80° | 4 / 6 / 12 Mbit/s |
 
 Select a complete parameter group with:
 
 ```bash
 roslaunch gazebo_sim_camera static_camera.launch \
-  camera_profile:=world_ultrawide_4k30_140 gui:=true
+  camera_profile:=world_ultrawide_4k30_130 gui:=true
 
 roslaunch gazebo_sim_camera static_camera.launch \
   camera_profile:=calibration_standard_720p20 gui:=true
@@ -62,9 +62,9 @@ available as explicit overrides. Their default value is the sentinel
 profile.
 
 Gazebo Classic interprets `horizontal_fov` as radians, so the profile keeps FOV
-in human-readable degrees and xacro converts it. The 140° profile is an ideal
+in human-readable degrees and xacro converts it. The 130° profile is an ideal
 rectilinear pinhole camera with zero distortion, not a fisheye lens model. At
-16:9 its vertical FOV is approximately 114.19°, and strong edge stretching is
+16:9 its vertical FOV is approximately 104.25°, and edge stretching is
 expected.
 
 The configured frame rate is the sensor target rate. It does not by itself
@@ -78,7 +78,7 @@ optics profile:
 
 ```bash
 roslaunch gazebo_sim_camera static_camera.launch \
-  camera_profile:=world_ultrawide_4k30_140 \
+  camera_profile:=world_ultrawide_4k30_130 \
   model_name:=yard_camera \
   media_source_id:=yard_cam \
   media_rtp_port:=5010 \

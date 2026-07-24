@@ -1,17 +1,17 @@
 schema_version: 1
-default_profile: world_ultrawide_4k30_140
+default_profile: world_ultrawide_4k30_130
 
 # Profiles describe only the simulated optics, render cadence, encoder budget,
 # and explicit calibration snapshot quality. Runtime identity, RTP/control
 # endpoints, Gazebo pose, and TF ownership remain per-instance launch inputs.
 profiles:
-  world_ultrawide_4k30_140:
+  world_ultrawide_4k30_130:
     image:
       width_px: 3840
       height_px: 2160
       frame_rate_hz: 30.0
     lens:
-      horizontal_fov_degrees: 140.0
+      horizontal_fov_degrees: 130.0
       near_clip_m: 0.05
       far_clip_m: 100.0
       gaussian_noise_stddev: 0.0

@@ -10,7 +10,7 @@
   <xacro:arg name="model_name" default="gazebo_static_camera"/>
   <xacro:arg name="camera_link_frame" default="usb_cam_link"/>
   <xacro:arg name="optical_frame" default="usb_cam_optical_frame"/>
-  <xacro:arg name="camera_profile" default="world_ultrawide_4k30_140"/>
+  <xacro:arg name="camera_profile" default="world_ultrawide_4k30_130"/>
   <xacro:arg name="camera_profiles_file" default="../config/world_camera_profiles.yaml"/>
   <xacro:arg name="media_source_id" default="usb_cam"/>
   <xacro:arg name="media_rtp_host" default="127.0.0.1"/>

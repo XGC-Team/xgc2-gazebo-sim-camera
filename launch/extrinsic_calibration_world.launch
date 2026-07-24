@@ -7,7 +7,7 @@
   <arg name="optical_frame" default="usb_cam_optical_frame"/>
   <arg name="gt_camera_link_frame" default="usb_cam_link_gt"/>
   <arg name="gt_optical_frame" default="usb_cam_optical_frame_gt"/>
-  <arg name="camera_profile" default="world_ultrawide_4k30_140"/>
+  <arg name="camera_profile" default="world_ultrawide_4k30_130"/>
   <arg name="camera_profiles_file"
        default="$(find gazebo_sim_camera)/config/world_camera_profiles.yaml"/>
   <arg name="width" default="profile"/>
