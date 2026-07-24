@@ -59,7 +59,6 @@ ownership:
   paths:
   - /opt/ros/noetic/share/gazebo_sim_camera
   - /opt/ros/noetic/lib/gazebo_sim_camera
-  - /usr/share/xgc2/process-definitions/gazebo-static-camera.json
 release:
   requires:
   - xgc2-gazebo-sim-scenes

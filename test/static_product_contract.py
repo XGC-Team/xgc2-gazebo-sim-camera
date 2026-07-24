@@ -21,21 +21,20 @@ cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
 profiles = yaml.safe_load(
     (root / "config/world_camera_profiles.yaml").read_text(encoding="utf-8")
 )
-definition = json.loads(
-    (root / "process-definitions/gazebo-static-camera.json").read_text(
-        encoding="utf-8"
-    )
-)["definitions"][0]
-archived_definition = json.loads(
-    (root / "process-definitions/gazebo-static-camera-0.4.0.json").read_text(
-        encoding="utf-8"
-    )
-)["definitions"][0]
-profile_predecessor = json.loads(
-    (root / "process-definitions/gazebo-static-camera-0.6.0.json").read_text(
-        encoding="utf-8"
-    )
-)["definitions"][0]
+# Process definitions are owned by the xgc2 process-catalog (B1, current only).
+catalog_definition = (
+    root.parents[3]
+    / "xgc2"
+    / "xgc2"
+    / "process-catalog"
+    / "current"
+    / "ros1"
+    / "simulator"
+    / "gazebo-sim"
+    / "camera"
+    / "gazebo-static-camera.json"
+)
+definition = json.loads(catalog_definition.read_text(encoding="utf-8"))["definitions"][0]
 
 assert profiles["schema_version"] == 1
 assert profiles["default_profile"] == "world_ultrawide_4k30_140"
@@ -101,14 +100,6 @@ assert '<arg name="use_server_time" value="$(arg vrpn_use_server_time)"/>' in ex
 properties = definition["parameters"]["properties"]
 profile_property = properties["cameraProfile"]
 assert definition["version"] == "0.7.0"
-assert archived_definition["version"] == "0.4.0"
-assert profile_predecessor["version"] == "0.6.0"
-assert profile_predecessor["parameters"]["properties"]["width"]["default"] == 3840
-assert profile_predecessor["parameters"]["properties"]["height"]["default"] == 2160
-assert profile_predecessor["parameters"]["properties"]["fps"]["default"] == 30.0
-assert profile_predecessor["parameters"]["properties"]["hfov"]["default"] == 2.44346095
-assert "width:=${width}" in profile_predecessor["command"]["args"]
-assert "media_bitrate:=${mediaBitrate}" in profile_predecessor["command"]["args"]
 assert profile_property["default"] == profiles["default_profile"]
 assert profile_property["enum"] == list(profiles["profiles"])
 assert definition["parameters"]["additionalProperties"] is False

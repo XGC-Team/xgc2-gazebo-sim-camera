@@ -9,7 +9,6 @@ bash -n .xgc2/scripts/*.sh
 python3 -m py_compile scripts/camera_lifecycle_keepalive.py scripts/camera_contract_test.py scripts/web_calibration.py test/test_world_camera_profiles.py .xgc2/scripts/xgc2_artifact_manifest.py
 python3 test/static_product_contract.py
 python3 test/test_world_camera_profiles.py
-python3 -m json.tool process-definitions/gazebo-static-camera.json >/dev/null
 
 required=(
   .github/workflows/ci.yml .github/workflows/release.yml .xgc2/product.yml
@@ -22,9 +21,6 @@ required=(
   scripts/camera_lifecycle_keepalive.py
   urdf/fixed_rgb_camera.urdf.xacro config/extrinsic_markers_vrpn.yaml
   config/world_camera_profiles.yaml
-  process-definitions/gazebo-static-camera.json
-  process-definitions/gazebo-static-camera-0.6.0.json
-  process-definitions/gazebo-static-camera-0.4.0.json
   test/static_camera_contract.test
   test/static_product_contract.py
   test/test_world_camera_profiles.py
@@ -42,9 +38,6 @@ grep -q '<exec_depend>rospy</exec_depend>' package.xml
 grep -q '^Depends: python3-yaml, ros-noetic-gazebo-plugins,' .xgc2/scripts/package_debs.sh
 grep -q '^  recommends:$' .xgc2/product.yml
 grep -q '^Recommends: ros-noetic-xgc2-gazebo-sim-vrpn-bridge' .xgc2/scripts/package_debs.sh
-grep -q 'id": "gazebo-static-camera"' process-definitions/gazebo-static-camera.json
-grep -q '/usr/share/xgc2/process-definitions' CMakeLists.txt
-grep -q 'PLUGIN_RELATIVE="usr/share/xgc2/process-definitions/gazebo-static-camera.json"' .xgc2/scripts/package_debs.sh
 
 for xml in launch/*.launch test/*.test; do xmllint --noout "${xml}"; done
 # Direct expansion exercises every declared default.  This specifically guards

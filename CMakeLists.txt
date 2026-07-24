@@ -45,7 +45,6 @@ catkin_install_python(PROGRAMS
 install(DIRECTORY
   config
   launch
-  process-definitions
   rviz
   src
   test
@@ -53,9 +52,6 @@ install(DIRECTORY
   web
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
   USE_SOURCE_PERMISSIONS
-)
-install(FILES process-definitions/gazebo-static-camera.json
-  DESTINATION /usr/share/xgc2/process-definitions
 )
 
 if(CATKIN_ENABLE_TESTING)

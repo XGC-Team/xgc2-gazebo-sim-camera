@@ -35,7 +35,6 @@ for relative in "share/${ROS_PACKAGE}" "lib/${ROS_PACKAGE}"; do
   fi
 done
 
-PLUGIN_RELATIVE="usr/share/xgc2/process-definitions/gazebo-static-camera.json"
 PLUGIN_SOURCE="${INSTALL_ROOT}/${PLUGIN_RELATIVE}"
 test -f "${PLUGIN_SOURCE}" || {
   echo "missing installed ProcessDefinition: ${PLUGIN_SOURCE}" >&2
