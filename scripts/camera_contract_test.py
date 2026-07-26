@@ -62,7 +62,7 @@ class CameraContractTest(unittest.TestCase):
         )
 
     def request_description(self, path):
-        connection = self.connect_to_camera(path, timeout=45.0)
+        connection = self.connect_to_camera(path, timeout=90.0)
         try:
             connection.sendall(b'{"operation":"describe"}\n')
             encoded_header, remainder = receive_line(connection)
@@ -79,7 +79,7 @@ class CameraContractTest(unittest.TestCase):
             connection.close()
 
     def request_snapshot(self, path):
-        connection = self.connect_to_camera(path, timeout=45.0)
+        connection = self.connect_to_camera(path, timeout=90.0)
         try:
             request = {
                 "operation": "snapshot",

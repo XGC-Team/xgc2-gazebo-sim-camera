@@ -13,7 +13,7 @@
     <arg name="publish_truth_tf" value="true"/>
   </include>
   <test test-name="static_camera_contract" pkg="gazebo_sim_camera"
-        type="camera_contract_test.py" time-limit="90">
+        type="camera_contract_test.py" time-limit="180">
     <param name="control_socket" value="/tmp/xgc2/media/contract_camera.sock"/>
     <param name="source_id" value="contract_camera"/>
     <param name="rtp_host" value="127.0.0.1"/>

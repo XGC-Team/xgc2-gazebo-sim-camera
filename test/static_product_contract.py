@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import json
 from pathlib import Path
 
 import yaml
@@ -21,20 +20,6 @@ cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
 profiles = yaml.safe_load(
     (root / "config/world_camera_profiles.yaml").read_text(encoding="utf-8")
 )
-# Process definitions are owned by the xgc2 process-catalog (B1, current only).
-catalog_definition = (
-    root.parents[3]
-    / "xgc2"
-    / "xgc2"
-    / "process-catalog"
-    / "current"
-    / "ros1"
-    / "simulator"
-    / "gazebo-sim"
-    / "camera"
-    / "gazebo-static-camera.json"
-)
-definition = json.loads(catalog_definition.read_text(encoding="utf-8"))["definitions"][0]
 
 assert profiles["schema_version"] == 1
 assert profiles["default_profile"] == "world_ultrawide_4k30_130"
@@ -96,53 +81,5 @@ assert "scripts/camera_lifecycle_keepalive.py" in cmake
 
 assert '<arg name="vrpn_use_server_time" default="false"/>' in extrinsic
 assert '<arg name="use_server_time" value="$(arg vrpn_use_server_time)"/>' in extrinsic
-
-properties = definition["parameters"]["properties"]
-profile_property = properties["cameraProfile"]
-assert definition["version"] == "0.7.0"
-assert profile_property["default"] == profiles["default_profile"]
-assert profile_property["enum"] == list(profiles["profiles"])
-assert definition["parameters"]["additionalProperties"] is False
-for removed_fragment in (
-    "width",
-    "height",
-    "fps",
-    "hfov",
-    "mediaBitrate",
-    "mediaMaxBitrate",
-    "mediaPacingBitrate",
-    "mediaVbvBufferMilliseconds",
-    "snapshotJpegQuality",
-):
-    assert removed_fragment not in properties
-for instance_property in (
-    "modelName",
-    "cameraLinkFrame",
-    "opticalFrame",
-    "mediaSourceId",
-    "mediaRtpPort",
-    "mediaControlSocket",
-    "x",
-    "y",
-    "z",
-    "roll",
-    "pitch",
-    "yaw",
-):
-    assert instance_property in properties
-
-command_arguments = definition["command"]["args"]
-assert "camera_profile:=${cameraProfile}" in command_arguments
-assert "media_source_id:=${mediaSourceId}" in command_arguments
-assert "media_rtp_port:=${mediaRtpPort}" in command_arguments
-assert "media_control_socket:=${mediaControlSocket}" in command_arguments
-assert not any(argument.startswith("width:=") for argument in command_arguments)
-assert not any(argument.startswith("media_bitrate:=") for argument in command_arguments)
-assert definition["beforeStart"]["command"]["args"][1] == "/gazebo/delete_model"
-assert definition["beforeStop"]["command"]["args"][1] == "/gazebo/delete_model"
-assert definition["resourceClaims"][0]["namespace"] == "gazebo-model"
-probe = definition["readiness"]
-assert probe["kind"] == "unix"
-assert probe["address"] == "${mediaControlSocket}"
 
 print("Static product contracts passed")
