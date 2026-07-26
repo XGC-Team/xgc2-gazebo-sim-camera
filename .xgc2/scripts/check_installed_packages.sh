@@ -4,20 +4,26 @@ set -euo pipefail
 ROS_DISTRO="${ROS_DISTRO:-noetic}"
 source "/opt/ros/${ROS_DISTRO}/setup.bash"
 SHARE="/opt/ros/${ROS_DISTRO}/share/gazebo_sim_camera"
+PLUGIN="/opt/ros/${ROS_DISTRO}/lib/libxgc_gazebo_media_camera.so"
 
 dpkg -s ros-noetic-xgc2-gazebo-sim-camera >/dev/null
+dpkg -s libgl1 libglew2.1 libjpeg8 >/dev/null
 test "$(rospack find gazebo_sim_camera)" = "${SHARE}"
 test -x "/opt/ros/${ROS_DISTRO}/lib/gazebo_sim_camera/camera_contract_test.py"
 test -x "/opt/ros/${ROS_DISTRO}/lib/gazebo_sim_camera/camera_lifecycle_keepalive.py"
 test -f "${SHARE}/urdf/fixed_rgb_camera.urdf.xacro"
 test -f "${SHARE}/config/world_camera_profiles.yaml"
 test -f "${PLUGIN}"
+PLUGIN_DEPENDENCIES="$(ldd "${PLUGIN}")"
+! grep -q 'not found' <<<"${PLUGIN_DEPENDENCIES}"
+grep -q 'libgazebo_sensors.so' <<<"${PLUGIN_DEPENDENCIES}"
+grep -q 'libGLEW.so.2.1' <<<"${PLUGIN_DEPENDENCIES}"
+grep -q 'libjpeg.so.8' <<<"${PLUGIN_DEPENDENCIES}"
+grep -q 'libGL.so.1' <<<"${PLUGIN_DEPENDENCIES}"
+grep -a -q 'libnvidia-encode.so.1' "${PLUGIN}"
 grep -q 'xacro.load_yaml' "${SHARE}/urdf/fixed_rgb_camera.urdf.xacro"
 grep -q 'libxgc_gazebo_media_camera.so' "${SHARE}/urdf/fixed_rgb_camera.urdf.xacro"
 grep -q 'type="camera_lifecycle_keepalive.py"' "${SHARE}/launch/static_camera.launch"
-grep -q '"version": "0.7.0"' "${PLUGIN}"
-grep -q '"cameraProfile"' "${PLUGIN}"
-python3 -m json.tool "${PLUGIN}" >/dev/null
 
 EXPANDED_PROFILE="$(mktemp)"
 trap 'rm -f "${EXPANDED_PROFILE}"' EXIT

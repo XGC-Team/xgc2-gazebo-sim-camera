@@ -142,8 +142,7 @@ assert definition["beforeStart"]["command"]["args"][1] == "/gazebo/delete_model"
 assert definition["beforeStop"]["command"]["args"][1] == "/gazebo/delete_model"
 assert definition["resourceClaims"][0]["namespace"] == "gazebo-model"
 probe = definition["readiness"]
-assert probe["kind"] == "exec"
-assert probe["command"]["executable"] == "/usr/bin/test"
-assert probe["command"]["args"] == ["-S", "${mediaControlSocket}"]
+assert probe["kind"] == "unix"
+assert probe["address"] == "${mediaControlSocket}"
 
 print("Static product contracts passed")

@@ -32,6 +32,21 @@ The optical-frame joint uses the REP-103 rotation
 `rpy=(-pi/2, 0, -pi/2)`. A second instance must use a distinct model name,
 source ID, RTP port, control socket, camera-link frame, and optical frame.
 
+The source-control protocol is newline-delimited JSON. A media edge can verify
+the source it is paired with before activating rendering:
+
+```json
+{"operation":"describe"}
+```
+
+The response reports protocol version 1, the resolved Gazebo sensor dimensions
+and update rate, H264/RTP payload type 96 at a 90 kHz clock, the actual loopback
+RTP host and port, the source and frame IDs, and the supported `set-active`,
+`request-keyframe`, and `snapshot` operations. Media Edge validates these
+values before opening its RTP listener, so a mismatched camera/edge port fails
+at startup instead of leaving a silent source. `describe` is side-effect free
+and remains available while the sensor and NVENC encoder are inactive.
+
 ## World camera profiles
 
 `config/world_camera_profiles.yaml` is the canonical source for simulated
@@ -139,11 +154,12 @@ pose.
 
 ## Managed process
 
-ProcessDefinition `gazebo-static-camera` version 0.7 exposes
-`cameraProfile` as an enum synchronized with the checked-in YAML. Model/frame
-identity, source ID, RTP port, control socket, pose, and TF mode remain ordinary
-process parameters. Readiness is the presence of the private control socket,
-not a ROS image topic.
+The XGC2 central process catalog, not this product, owns ProcessDefinition
+`gazebo-static-camera`. It exposes `cameraProfile` as an enum synchronized with
+the checked-in YAML. Model/frame identity, source ID, RTP port, control socket,
+pose, and TF mode remain ordinary process parameters. Readiness is the presence
+of the private control socket, not a ROS image topic. This Debian package does
+not install files under `/usr/share/xgc2/process-definitions`.
 
 ## Test and package
 
@@ -158,10 +174,22 @@ catkin_test_results
 ```
 
 The profile unit test validates schema bounds and expands every named profile
-through xacro. The Gazebo contract requests one explicit snapshot through the
-control socket and validates dimensions, JPEG/RGB payloads, pinhole intrinsics,
-and TF without requiring NVENC video encoding in the test.
+through xacro. While the source is inactive, the Gazebo contract first calls
+`describe` and validates the actual source identity, H264/RTP contract and
+loopback endpoint, dimensions, frame rate, frame ID, and capabilities. It then
+requests one explicit snapshot and validates dimensions, JPEG/RGB payloads,
+pinhole intrinsics, and TF without requiring NVENC video encoding in the test.
 
-The Debian package installs the active ProcessDefinition at
-`/usr/share/xgc2/process-definitions/gazebo-static-camera.json` and keeps a
-package-share copy for ROS tooling.
+After building and sourcing a Catkin workspace, the Gazebo lifecycle regression
+starts and stops the full contract twice and rejects an otherwise easy-to-miss
+`gzserver` exit crash:
+
+```bash
+DISPLAY=:1 .xgc2/scripts/check_gazebo_shutdown.sh
+```
+
+The Debian package owns the ROS package share and executable directories plus
+`/opt/ros/noetic/lib/libxgc_gazebo_media_camera.so`. It declares the plugin's
+linked OpenGL, GLEW, and JPEG runtime libraries. `libnvidia-encode.so.1` is
+loaded dynamically and must come from the target's matching NVIDIA driver
+installation; the product does not pin or install a particular driver series.

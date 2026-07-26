@@ -48,6 +48,7 @@
 #include <deque>
 #include <filesystem>
 #include <functional>
+#include <iomanip>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -65,7 +66,9 @@ namespace {
 constexpr std::size_t kMaximumControlRequestBytes = 64 * 1024;
 constexpr std::size_t kMaximumRtpPayloadBytes = 1'200;
 constexpr std::size_t kMinimumPacedQueueBytes = 256 * 1024;
+constexpr int kSourceControlProtocolVersion = 1;
 constexpr std::uint8_t kH264PayloadType = 96;
+constexpr std::uint32_t kRtpClockRate = 90'000;
 constexpr std::uint32_t kRtpSSRC = 0x58474332;  // "XGC2"
 
 using NvEncodeAPICreateInstance = NVENCSTATUS (NVENCAPI *)(NV_ENCODE_API_FUNCTION_LIST *);
@@ -268,10 +271,12 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
   ~XGCMediaCameraPlugin() override {
     stopping_.store(true);
     postRenderConnection_.reset();
-    if (renderTarget_) {
-      renderTarget_->removeListener(this);
-      renderTarget_ = nullptr;
-    }
+    // CameraSensor::Fini tears down its rendering::Camera and OGRE render
+    // target before Sensor::Fini releases sensor plugins. renderTarget_ is a
+    // non-owning cache, so it is already dangling when this destructor runs
+    // and must not be dereferenced here. Destruction of the target also
+    // destroys its listener registry.
+    renderTarget_ = nullptr;
     StopControlServer();
     StopRTPPacer();
     if (rtpSocket_ >= 0) {
@@ -636,6 +641,10 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
       ReplyError(client, "operation is required");
       return;
     }
+    if (*operation == "describe") {
+      HandleDescribeRequest(client);
+      return;
+    }
     if (*operation == "set-active") {
       const auto active = JSONBoolean(*request, "active");
       if (!active) {
@@ -666,6 +675,30 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
       return;
     }
     ReplyError(client, "unsupported media source operation");
+  }
+
+  void HandleDescribeRequest(int client) const {
+    // CameraSensor exposes the resolved SDF image size and update rate even
+    // while the on-demand sensor is inactive. This keeps describe side-effect
+    // free and prevents the source/edge pairing contract from reporting launch
+    // arguments that Gazebo did not actually apply.
+    std::ostringstream reply;
+    reply << std::setprecision(std::numeric_limits<double>::max_digits10);
+    reply << "{\"ok\":true"
+          << ",\"protocolVersion\":" << kSourceControlProtocolVersion
+          << ",\"sourceId\":\"" << EscapeJSON(sourceID_)
+          << "\",\"codec\":\"H264\""
+          << ",\"rtpPayloadType\":" << static_cast<unsigned int>(kH264PayloadType)
+          << ",\"rtpClockRate\":" << kRtpClockRate
+          << ",\"rtpHost\":\"" << EscapeJSON(rtpHost_)
+          << "\",\"rtpPort\":" << rtpPort_
+          << ",\"width\":" << sensor_->ImageWidth()
+          << ",\"height\":" << sensor_->ImageHeight()
+          << ",\"fps\":" << sensor_->UpdateRate()
+          << ",\"frameId\":\"" << EscapeJSON(frameID_)
+          << "\",\"capabilities\":[\"set-active\",\"request-keyframe\",\"snapshot\"]}\n";
+    const std::string encoded = reply.str();
+    SendAll(client, encoded.data(), encoded.size());
   }
 
   void ReplyOK(int client) {
@@ -968,10 +1001,12 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     picture.pictureStruct = NV_ENC_PIC_STRUCT_FRAME;
     const double fps = std::max(0.1, static_cast<double>(sensor_->UpdateRate()));
     const std::uint64_t inputTimestamp = static_cast<std::uint64_t>(
-        std::llround(static_cast<double>(encodedFrameIndex_) * 90'000.0 / fps));
+        std::llround(static_cast<double>(encodedFrameIndex_) *
+                     static_cast<double>(kRtpClockRate) / fps));
     picture.inputTimeStamp = inputTimestamp;
     picture.inputDuration = std::max<std::uint64_t>(
-        1, static_cast<std::uint64_t>(std::llround(90'000.0 / fps)));
+        1, static_cast<std::uint64_t>(
+               std::llround(static_cast<double>(kRtpClockRate) / fps)));
     if (forceKeyframe) {
       picture.encodePicFlags = NV_ENC_PIC_FLAG_FORCEIDR | NV_ENC_PIC_FLAG_OUTPUT_SPSPPS;
     }

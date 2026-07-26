@@ -61,6 +61,23 @@ class CameraContractTest(unittest.TestCase):
             )
         )
 
+    def request_description(self, path):
+        connection = self.connect_to_camera(path, timeout=45.0)
+        try:
+            connection.sendall(b'{"operation":"describe"}\n')
+            encoded_header, remainder = receive_line(connection)
+            self.assertEqual(remainder, b"")
+            description = json.loads(encoded_header.decode("utf-8"))
+            if not description.get("ok"):
+                self.fail(
+                    "camera description failed: {}".format(
+                        description.get("error")
+                    )
+                )
+            return description
+        finally:
+            connection.close()
+
     def request_snapshot(self, path):
         connection = self.connect_to_camera(path, timeout=45.0)
         try:
@@ -88,11 +105,41 @@ class CameraContractTest(unittest.TestCase):
         control_socket = rospy.get_param(
             "~control_socket", "/tmp/xgc2/media/contract_camera.sock"
         )
+        source_id = rospy.get_param("~source_id", "contract_camera")
+        rtp_host = rospy.get_param("~rtp_host", "127.0.0.1")
+        rtp_port = int(rospy.get_param("~rtp_port", 15004))
         frame_id = rospy.get_param("~frame_id", "contract_camera_optical_frame")
         parent_frame = rospy.get_param("~parent_frame", "map")
         width = int(rospy.get_param("~width", 1280))
         height = int(rospy.get_param("~height", 720))
+        fps = float(rospy.get_param("~fps", 20.0))
         hfov = float(rospy.get_param("~hfov", 1.3962634015954636))
+
+        # The plugin starts inactive. Describe must report the resolved Gazebo
+        # sensor contract without activating rendering or allocating NVENC.
+        description = self.request_description(control_socket)
+        self.assertEqual(
+            description,
+            {
+                "ok": True,
+                "protocolVersion": 1,
+                "sourceId": source_id,
+                "codec": "H264",
+                "rtpPayloadType": 96,
+                "rtpClockRate": 90000,
+                "rtpHost": rtp_host,
+                "rtpPort": rtp_port,
+                "width": width,
+                "height": height,
+                "fps": fps,
+                "frameId": frame_id,
+                "capabilities": [
+                    "set-active",
+                    "request-keyframe",
+                    "snapshot",
+                ],
+            },
+        )
 
         header, jpeg, rgb = self.request_snapshot(control_socket)
         self.assertEqual(header["snapshotId"], "static-camera-contract")

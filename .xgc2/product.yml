@@ -1,7 +1,7 @@
 schema: xgc2.product.v1
 id: xgc2-gazebo-sim-camera
 name: XGC2 Gazebo Sim Camera
-version: 0.1.0-12
+version: 0.1.0-13
 kind: ros1-apt
 summary: Profile-driven GPU-rendered H264 world camera and calibration scenes for
   Gazebo Classic 11.
@@ -20,9 +20,13 @@ apt:
     - amd64
     - arm64
   depends:
+  - libgl1
+  - libglew2.1
+  - libjpeg8
   - python3-numpy
   - python3-opencv
   - python3-yaml
+  - ros-noetic-camera-calibration
   - ros-noetic-gazebo-msgs
   - ros-noetic-gazebo-plugins
   - ros-noetic-gazebo-ros
@@ -54,11 +58,16 @@ usage:
 
     or depend on any FS150, Scout, UAV, or other vehicle camera model.
 
+    XGC2 owns the ProcessDefinition centrally; this package owns the Gazebo source
+
+    plugin and ROS package only.
+
     '
 ownership:
   paths:
   - /opt/ros/noetic/share/gazebo_sim_camera
   - /opt/ros/noetic/lib/gazebo_sim_camera
+  - /opt/ros/noetic/lib/libxgc_gazebo_media_camera.so
 release:
   requires:
   - xgc2-gazebo-sim-scenes
@@ -71,4 +80,4 @@ release:
   workflow: release.yml
   ci_workflow: ci.yml
   apt_versions:
-    focal: 0.1.0-12
+    focal: 0.1.0-13

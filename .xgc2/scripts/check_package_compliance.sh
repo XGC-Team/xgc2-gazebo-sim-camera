@@ -13,6 +13,7 @@ python3 test/test_world_camera_profiles.py
 required=(
   .github/workflows/ci.yml .github/workflows/release.yml .xgc2/product.yml
   .xgc2/scripts/build_debs_in_docker.sh .xgc2/scripts/check_installed_packages.sh
+  .xgc2/scripts/check_gazebo_shutdown.sh
   .xgc2/scripts/check_package_compliance.sh .xgc2/scripts/package_debs.sh
   CMakeLists.txt LICENSE README.md package.xml
   launch/static_camera.launch launch/intrinsic_calibration_world.launch
@@ -29,13 +30,14 @@ for path in "${required[@]}"; do test -f "${path}" || { echo "Missing ${path}" >
 
 grep -q 'id: xgc2-gazebo-sim-camera' .xgc2/product.yml
 grep -Eq '^version: [0-9]+\.[0-9]+\.[0-9]+-[0-9]+$' .xgc2/product.yml
-grep -q '^version: 0.1.0-12$' .xgc2/product.yml
-grep -q '^    focal: 0.1.0-12$' .xgc2/product.yml
+grep -q '^version: 0.1.0-13$' .xgc2/product.yml
+grep -q '^    focal: 0.1.0-13$' .xgc2/product.yml
 grep -q 'PACKAGE="ros-noetic-xgc2-gazebo-sim-camera"' .xgc2/scripts/package_debs.sh
+grep -q 'PLUGIN="${PREFIX}/lib/libxgc_gazebo_media_camera.so"' .xgc2/scripts/package_debs.sh
 grep -q '<name>gazebo_sim_camera</name>' package.xml
 grep -q '<exec_depend>python3-yaml</exec_depend>' package.xml
 grep -q '<exec_depend>rospy</exec_depend>' package.xml
-grep -q '^Depends: python3-yaml, ros-noetic-gazebo-plugins,' .xgc2/scripts/package_debs.sh
+grep -q '^Depends: libgl1, libglew2.1, libjpeg8, python3-numpy, python3-opencv, python3-yaml, ros-noetic-camera-calibration,' .xgc2/scripts/package_debs.sh
 grep -q '^  recommends:$' .xgc2/product.yml
 grep -q '^Recommends: ros-noetic-xgc2-gazebo-sim-vrpn-bridge' .xgc2/scripts/package_debs.sh
 

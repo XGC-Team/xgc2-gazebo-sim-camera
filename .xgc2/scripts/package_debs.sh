@@ -29,19 +29,22 @@ rm -f "${OUTPUT_DIR}"/*.deb
 
 for relative in "share/${ROS_PACKAGE}" "lib/${ROS_PACKAGE}"; do
   source_path="${INSTALL_ROOT}${PREFIX}/${relative}"
-  if [[ -e "${source_path}" ]]; then
-    mkdir -p "${PKG_ROOT}${PREFIX}/$(dirname "${relative}")"
-    cp -a "${source_path}" "${PKG_ROOT}${PREFIX}/$(dirname "${relative}")/"
-  fi
+  test -e "${source_path}" || {
+    echo "missing installed ROS package path: ${source_path}" >&2
+    exit 1
+  }
+  mkdir -p "${PKG_ROOT}${PREFIX}/$(dirname "${relative}")"
+  cp -a "${source_path}" "${PKG_ROOT}${PREFIX}/$(dirname "${relative}")/"
 done
 
-PLUGIN_SOURCE="${INSTALL_ROOT}/${PLUGIN_RELATIVE}"
+PLUGIN="${PREFIX}/lib/libxgc_gazebo_media_camera.so"
+PLUGIN_SOURCE="${INSTALL_ROOT}${PLUGIN}"
 test -f "${PLUGIN_SOURCE}" || {
-  echo "missing installed ProcessDefinition: ${PLUGIN_SOURCE}" >&2
+  echo "missing installed Gazebo media camera plugin: ${PLUGIN_SOURCE}" >&2
   exit 1
 }
-mkdir -p "${PKG_ROOT}/$(dirname "${PLUGIN_RELATIVE}")"
-cp -a "${PLUGIN_SOURCE}" "${PKG_ROOT}/${PLUGIN_RELATIVE}"
+mkdir -p "${PKG_ROOT}$(dirname "${PLUGIN}")"
+cp -a "${PLUGIN_SOURCE}" "${PKG_ROOT}${PLUGIN}"
 
 cat >"${PKG_ROOT}/DEBIAN/control" <<EOF
 Package: ${PACKAGE}
@@ -50,7 +53,7 @@ Section: misc
 Priority: optional
 Architecture: ${ARCH}
 Maintainer: XGC2 <dev@xiaokang.ink>
-Depends: python3-yaml, ros-noetic-gazebo-plugins, ros-noetic-gazebo-ros, ros-noetic-rospy, ros-noetic-roslaunch, ros-noetic-rostopic, ros-noetic-rviz, ros-noetic-sensor-msgs, ros-noetic-tf, ros-noetic-xacro, ros-noetic-xgc2-gazebo-sim-worlds (>= 1.1.0-14)
+Depends: libgl1, libglew2.1, libjpeg8, python3-numpy, python3-opencv, python3-yaml, ros-noetic-camera-calibration, ros-noetic-gazebo-msgs, ros-noetic-gazebo-plugins, ros-noetic-gazebo-ros, ros-noetic-rospy, ros-noetic-roslaunch, ros-noetic-rostopic, ros-noetic-rviz, ros-noetic-sensor-msgs, ros-noetic-tf, ros-noetic-xacro, ros-noetic-xgc2-gazebo-sim-worlds (>= 1.1.0-14)
 Recommends: ros-noetic-xgc2-gazebo-sim-vrpn-bridge (>= 1.1.0-13)
 Description: XGC2 independent Gazebo Classic fixed-site RGB camera
 EOF
