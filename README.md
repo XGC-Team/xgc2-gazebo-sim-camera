@@ -179,6 +179,10 @@ through xacro. While the source is inactive, the Gazebo contract first calls
 loopback endpoint, dimensions, frame rate, frame ID, and capabilities. It then
 requests one explicit snapshot and validates dimensions, JPEG/RGB payloads,
 pinhole intrinsics, and TF without requiring NVENC video encoding in the test.
+The multi-architecture Docker build sources the just-built Catkin overlay and
+runs this snapshot contract through Xvfb with Mesa software rendering. It is
+therefore valid on an arm64 runner without a GPU; hardware NVENC remains a
+target integration check rather than a packaging-CI prerequisite.
 
 After building and sourcing a Catkin workspace, the Gazebo lifecycle regression
 starts and stops the full contract twice and rejects an otherwise easy-to-miss

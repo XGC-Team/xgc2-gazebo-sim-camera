@@ -17,6 +17,9 @@ keepalive = (root / "scripts/camera_lifecycle_keepalive.py").read_text(
     encoding="utf-8"
 )
 cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
+docker_build = (root / ".xgc2/scripts/build_debs_in_docker.sh").read_text(
+    encoding="utf-8"
+)
 profiles = yaml.safe_load(
     (root / "config/world_camera_profiles.yaml").read_text(encoding="utf-8")
 )
@@ -78,6 +81,16 @@ assert 'name="$(arg model_name)_lifecycle_keepalive"' in launch
 assert 'rospy.init_node("camera_lifecycle_keepalive")' in keepalive
 assert "rospy.spin()" in keepalive
 assert "scripts/camera_lifecycle_keepalive.py" in cmake
+
+source_build = docker_build.index("    catkin_make\n")
+source_overlay = docker_build.index(
+    "    source /workspace/work/devel/setup.bash\n"
+)
+run_contract = docker_build.index(
+    "      catkin_make run_tests_gazebo_sim_camera\n"
+)
+assert source_build < source_overlay < run_contract
+assert "LIBGL_ALWAYS_SOFTWARE=1 xvfb-run" in docker_build
 
 assert '<arg name="vrpn_use_server_time" default="false"/>' in extrinsic
 assert '<arg name="use_server_time" value="$(arg vrpn_use_server_time)"/>' in extrinsic

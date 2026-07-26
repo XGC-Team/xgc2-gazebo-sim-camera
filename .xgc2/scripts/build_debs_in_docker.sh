@@ -79,6 +79,10 @@ docker run --rm \
     cd /workspace/work
     source /opt/ros/noetic/setup.bash
     catkin_make
+    # The contract spawns Gazebo from the just-built source workspace. Without
+    # this overlay, Gazebo cannot resolve libxgc_gazebo_media_camera.so and the
+    # model still inserts successfully while its control socket never appears.
+    source /workspace/work/devel/setup.bash
     LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x720x24" \
       catkin_make run_tests_gazebo_sim_camera
     catkin_test_results
