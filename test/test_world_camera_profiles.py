@@ -50,7 +50,12 @@ class WorldCameraProfilesTest(unittest.TestCase):
         self.assertEqual(document["default_profile"], "world_ultrawide_4k30_130")
         self.assertEqual(
             list(document["profiles"]),
-            ["world_ultrawide_4k30_130", "calibration_standard_720p20"],
+            [
+                "world_standard_720p30",
+                "world_standard_1080p30",
+                "world_ultrawide_4k30_130",
+                "calibration_standard_720p20",
+            ],
         )
 
         for name, profile in document["profiles"].items():
@@ -182,6 +187,18 @@ class WorldCameraProfilesTest(unittest.TestCase):
         self.assertEqual(
             sensor.findtext("plugin[@name='xgc_media_camera']/maxBitrate"),
             "6000000",
+        )
+
+    def test_managed_horizontal_fov_degrees_override_is_converted_to_radians(self):
+        sensor = sensor_from(
+            expand_profile(
+                "world_standard_1080p30",
+                "hfov_degrees:=110",
+            )
+        )
+        self.assertAlmostEqual(
+            float(sensor.findtext("camera/horizontal_fov")),
+            math.radians(110.0),
         )
 
 

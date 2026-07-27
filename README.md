@@ -56,6 +56,8 @@ per-instance launch parameters.
 
 | Profile | Image | Horizontal FOV | H264 average / max / pacing |
 | --- | --- | --- | --- |
+| `world_standard_720p30` | 1280×720 at 30 fps | 90° | 5 / 7.5 / 15 Mbit/s |
+| `world_standard_1080p30` | 1920×1080 at 30 fps | 90° | 9 / 13.5 / 27 Mbit/s |
 | `world_ultrawide_4k30_130` (default) | 3840×2160 at 30 fps | 130° | 24 / 36 / 72 Mbit/s |
 | `calibration_standard_720p20` | 1280×720 at 20 fps | 80° | 4 / 6 / 12 Mbit/s |
 
@@ -75,6 +77,10 @@ available as explicit overrides. Their default value is the sentinel
 `profile`; the managed ProcessDefinition intentionally exposes only
 `cameraProfile` so production workflows cannot assemble an incoherent partial
 profile.
+
+Managed callers may set `hfov_degrees` independently of the selected profile.
+It is converted to radians inside the xacro contract; the older `hfov`
+override remains radians for backwards-compatible direct launches.
 
 Gazebo Classic interprets `horizontal_fov` as radians, so the profile keeps FOV
 in human-readable degrees and xacro converts it. The 130° profile is an ideal

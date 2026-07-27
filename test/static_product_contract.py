@@ -27,6 +27,8 @@ profiles = yaml.safe_load(
 assert profiles["schema_version"] == 1
 assert profiles["default_profile"] == "world_ultrawide_4k30_130"
 assert list(profiles["profiles"]) == [
+    "world_standard_720p30",
+    "world_standard_1080p30",
     "world_ultrawide_4k30_130",
     "calibration_standard_720p20",
 ]
@@ -36,6 +38,7 @@ assert '<xacro:arg name="static" default="true"/>' in xacro
 assert "<gravity>false</gravity>" in xacro
 assert "xacro.load_yaml(xacro.arg('camera_profiles_file'))" in xacro
 assert "radians(float(profile_lens['horizontal_fov_degrees']))" in xacro
+assert "radians(float(xacro.arg('hfov_degrees')))" in xacro
 assert 'filename="libxgc_gazebo_media_camera.so"' in xacro
 assert "<sourceId>$(arg media_source_id)</sourceId>" in xacro
 assert "<rtpPort>$(arg media_rtp_port)</rtpPort>" in xacro
@@ -59,6 +62,8 @@ for argument in (
     "snapshot_jpeg_quality",
 ):
     assert f'<arg name="{argument}" default="profile"/>' in launch
+assert '<arg name="hfov_degrees" default="profile"/>' in launch
+assert "hfov_degrees:=$(arg hfov_degrees)" in launch
 assert "camera_profile:=$(arg camera_profile)" in launch
 assert "camera_profiles_file:=$(arg camera_profiles_file)" in launch
 assert "static:=$(arg static)" in launch

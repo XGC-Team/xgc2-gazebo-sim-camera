@@ -29,6 +29,7 @@
   <xacro:arg name="width" default="profile"/>
   <xacro:arg name="height" default="profile"/>
   <xacro:arg name="fps" default="profile"/>
+  <xacro:arg name="hfov_degrees" default="profile"/>
   <xacro:arg name="hfov" default="profile"/>
   <xacro:arg name="near_clip" default="profile"/>
   <xacro:arg name="far_clip" default="profile"/>
@@ -52,7 +53,7 @@
   <xacro:property name="camera_fps"
                   value="${float(profile_image['frame_rate_hz']) if xacro.arg('fps') == 'profile' else float(xacro.arg('fps'))}"/>
   <xacro:property name="camera_hfov"
-                  value="${radians(float(profile_lens['horizontal_fov_degrees'])) if xacro.arg('hfov') == 'profile' else float(xacro.arg('hfov'))}"/>
+                  value="${radians(float(xacro.arg('hfov_degrees'))) if xacro.arg('hfov_degrees') != 'profile' else (radians(float(profile_lens['horizontal_fov_degrees'])) if xacro.arg('hfov') == 'profile' else float(xacro.arg('hfov')))}"/>
   <xacro:property name="camera_near_clip"
                   value="${float(profile_lens['near_clip_m']) if xacro.arg('near_clip') == 'profile' else float(xacro.arg('near_clip'))}"/>
   <xacro:property name="camera_far_clip"

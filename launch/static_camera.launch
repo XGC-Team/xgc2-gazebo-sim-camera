@@ -36,6 +36,9 @@
   <arg name="width" default="profile"/>
   <arg name="height" default="profile"/>
   <arg name="fps" default="profile"/>
+  <!-- Human-facing managed callers use degrees. The legacy hfov override
+       remains radians for backwards-compatible direct roslaunch calls. -->
+  <arg name="hfov_degrees" default="profile"/>
   <arg name="hfov" default="profile"/>
   <arg name="near_clip" default="profile"/>
   <arg name="far_clip" default="profile"/>
@@ -81,7 +84,8 @@
            optical_frame:=$(arg optical_frame)
            camera_profile:=$(arg camera_profile)
            camera_profiles_file:=$(arg camera_profiles_file)
-           width:=$(arg width) height:=$(arg height) fps:=$(arg fps) hfov:=$(arg hfov)
+           width:=$(arg width) height:=$(arg height) fps:=$(arg fps)
+           hfov_degrees:=$(arg hfov_degrees) hfov:=$(arg hfov)
            near_clip:=$(arg near_clip) far_clip:=$(arg far_clip) noise_stddev:=$(arg noise_stddev)
            static:=$(arg static)
            media_source_id:=$(arg media_source_id) media_rtp_host:=$(arg media_rtp_host)
