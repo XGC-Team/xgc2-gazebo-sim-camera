@@ -16,6 +16,9 @@ extrinsic = (root / "launch/extrinsic_calibration_world.launch").read_text(
 keepalive = (root / "scripts/camera_lifecycle_keepalive.py").read_text(
     encoding="utf-8"
 )
+camera_contract = (root / "scripts/camera_contract_publisher.py").read_text(
+    encoding="utf-8"
+)
 cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
 docker_build = (root / ".xgc2/scripts/build_debs_in_docker.sh").read_text(
     encoding="utf-8"
@@ -86,6 +89,15 @@ assert 'name="$(arg model_name)_lifecycle_keepalive"' in launch
 assert 'rospy.init_node("camera_lifecycle_keepalive")' in keepalive
 assert "rospy.spin()" in keepalive
 assert "scripts/camera_lifecycle_keepalive.py" in cmake
+assert 'name="media_control_socket" value="$(arg media_control_socket)"' in launch
+assert 'name="camera_profile" value="$(arg camera_profile)"' in launch
+assert "input_compressed_image_topic" not in launch
+assert "input_camera_info_topic" not in launch
+assert "_configured_intrinsics()" in camera_contract
+assert '"includeRgb": False' in camera_contract
+assert '"requestKeyframe": False' in camera_contract
+assert "self._publish_camera_info(rospy.Time.now())" in camera_contract
+assert "0.0, 0.0, 1.0," in camera_contract
 
 source_build = docker_build.index("    catkin_make\n")
 source_overlay = docker_build.index(

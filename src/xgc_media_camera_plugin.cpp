@@ -671,7 +671,12 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
         ReplyError(client, "snapshotId must be a stable identifier");
         return;
       }
-      HandleSnapshotRequest(client, *snapshotID);
+      const auto includeRGBValue = JSONBoolean(*request, "includeRgb");
+      const auto requestKeyframeValue =
+          JSONBoolean(*request, "requestKeyframe");
+      const bool includeRGB = includeRGBValue.value_or(true);
+      const bool requestKeyframe = requestKeyframeValue.value_or(true);
+      HandleSnapshotRequest(client, *snapshotID, includeRGB, requestKeyframe);
       return;
     }
     ReplyError(client, "unsupported media source operation");
@@ -711,7 +716,11 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     SendAll(client, reply.data(), reply.size());
   }
 
-  void HandleSnapshotRequest(int client, const std::string &snapshotID) {
+  void HandleSnapshotRequest(
+      int client,
+      const std::string &snapshotID,
+      bool includeRGB,
+      bool requestKeyframe) {
     std::unique_lock<std::mutex> transaction(snapshotTransactionMutex_);
     {
       std::lock_guard<std::mutex> lock(snapshotMutex_);
@@ -722,7 +731,13 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
       // zero-filled allocation during the first target callback.
       snapshotRenderPassesToSkip_ = 1;
     }
-    forceKeyframe_.store(true);
+    // Calibration snapshots historically requested an accompanying H264 IDR.
+    // The live XGC ROS camera contract deliberately opts out: forcing an IDR
+    // for every JPEG projection frame would inflate the WebRTC stream and
+    // couple a visualization subscriber to media encoder cadence.
+    if (requestKeyframe) {
+      forceKeyframe_.store(true);
+    }
 
     SnapshotResult response;
     {
@@ -742,6 +757,12 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
       response = std::move(snapshot_);
       snapshot_ = SnapshotResult{};
       snapshotRenderPassesToSkip_ = 0;
+    }
+    if (!includeRGB) {
+      // The JPEG contract does not need the multi-megabyte raw RGB payload.
+      // Keep the default true for calibration clients that explicitly consume
+      // both representations.
+      response.rgb.clear();
     }
 
     std::ostringstream header;

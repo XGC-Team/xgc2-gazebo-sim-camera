@@ -9,6 +9,7 @@
     <arg name="media_source_id" value="contract_camera"/>
     <arg name="media_rtp_port" value="15004"/>
     <arg name="media_control_socket" value="/tmp/xgc2/media/contract_camera.sock"/>
+    <arg name="parent_frame" value="map"/>
     <arg name="mode" value="truth"/>
     <arg name="publish_truth_tf" value="true"/>
   </include>

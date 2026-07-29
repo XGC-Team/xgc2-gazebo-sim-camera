@@ -32,7 +32,7 @@
   <arg name="snapshot_jpeg_quality" default="profile"/>
   <arg name="gt_camera_link_frame" default="usb_cam_link_gt"/>
   <arg name="gt_optical_frame" default="usb_cam_optical_frame_gt"/>
-  <arg name="parent_frame" default="map"/>
+  <arg name="parent_frame" default="world"/>
   <arg name="width" default="profile"/>
   <arg name="height" default="profile"/>
   <arg name="fps" default="profile"/>
@@ -62,6 +62,15 @@
   -->
   <arg name="mode" default="truth"/>
   <arg name="publish_truth_tf" default="true"/>
+  <!-- Stable XGC-owned camera contract. The Gazebo topics above remain an
+       implementation detail and are never required by visualization clients. -->
+  <arg name="publish_xgc_contract" default="true"/>
+  <arg name="xgc_camera_link_frame" default="xgc_world_camera_link"/>
+  <arg name="xgc_optical_frame" default="xgc_world_camera_optical_frame"/>
+  <arg name="xgc_compressed_image_topic" default="/xgc/camera/world/image_raw/compressed"/>
+  <arg name="xgc_camera_info_topic" default="/xgc/camera/world/camera_info"/>
+  <arg name="xgc_transform_topic" default="/xgc/camera/world/tf"/>
+  <arg name="xgc_image_publish_rate" default="10.0"/>
 
   <param name="use_sim_time" value="$(arg use_sim_time)"/>
   <include if="$(arg start_gazebo)" file="$(find gazebo_ros)/launch/empty_world.launch">
@@ -98,6 +107,37 @@
   <node pkg="gazebo_ros" type="spawn_model" name="spawn_$(arg model_name)" output="screen"
         args="-urdf -param $(arg model_name)_description -model $(arg model_name)
           -x $(arg x) -y $(arg y) -z $(arg z) -R $(arg roll) -P $(arg pitch) -Y $(arg yaw)"/>
+
+  <node if="$(arg publish_xgc_contract)"
+        pkg="gazebo_sim_camera" type="camera_contract_publisher.py"
+        name="$(arg model_name)_xgc_camera_contract" output="screen" required="true">
+    <!-- This world-camera product owns the complete XGC contract. Intrinsics
+         are resolved from the same frozen profile/FOV values used by xacro;
+         JPEG frames come from the product media source, never Gazebo ROS
+         camera topics. -->
+    <param name="camera_profile" value="$(arg camera_profile)"/>
+    <param name="camera_profiles_file" value="$(arg camera_profiles_file)"/>
+    <param name="width" value="$(arg width)"/>
+    <param name="height" value="$(arg height)"/>
+    <param name="hfov_degrees" value="$(arg hfov_degrees)"/>
+    <param name="hfov" value="$(arg hfov)"/>
+    <param name="media_control_socket" value="$(arg media_control_socket)"/>
+    <param name="image_publish_rate" value="$(arg xgc_image_publish_rate)"/>
+    <param name="snapshot_timeout" value="5.0"/>
+    <param name="output_compressed_image_topic" value="$(arg xgc_compressed_image_topic)"/>
+    <param name="output_camera_info_topic" value="$(arg xgc_camera_info_topic)"/>
+    <param name="output_transform_topic" value="$(arg xgc_transform_topic)"/>
+    <param name="parent_frame" value="$(arg parent_frame)"/>
+    <param name="camera_link_frame" value="$(arg xgc_camera_link_frame)"/>
+    <param name="optical_frame" value="$(arg xgc_optical_frame)"/>
+    <param name="x" value="$(arg x)"/>
+    <param name="y" value="$(arg y)"/>
+    <param name="z" value="$(arg z)"/>
+    <param name="roll" value="$(arg roll)"/>
+    <param name="pitch" value="$(arg pitch)"/>
+    <param name="yaw" value="$(arg yaw)"/>
+    <param name="transform_publish_rate" value="10"/>
+  </node>
 
   <!-- spawn_model exits after insertion. Keep roslaunch alive whenever this
        launch has no TF publisher, so XGC can supervise and stop the managed
