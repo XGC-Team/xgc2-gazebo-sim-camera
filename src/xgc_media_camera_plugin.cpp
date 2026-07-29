@@ -909,7 +909,10 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     const std::size_t bytes = static_cast<std::size_t>(width) * height * 3;
     result.rgb.resize(bytes);
     try {
-      Ogre::PixelBox destination(width, height, 1, Ogre::PF_R8G8B8, result.rgb.data());
+      // PF_R8G8B8 is a word-ordered format and therefore writes B,G,R bytes
+      // on little-endian hosts. The snapshot contract is explicitly rgb8, so
+      // request OGRE's byte-ordered RGB format.
+      Ogre::PixelBox destination(width, height, 1, Ogre::PF_BYTE_RGB, result.rgb.data());
       camera_->RenderTexture()->getBuffer()->blitToMemory(destination);
     } catch (const std::exception &error) {
       CompleteSnapshotFailure(std::string("camera snapshot readback failed: ") + error.what());
@@ -1156,6 +1159,10 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     resource.height = height;
     resource.pitch = width * 4;
     resource.resourceToRegister = &texture;
+    // GL_RGBA8 stores R,G,B,A bytes. NVENC names its packed formats by the
+    // 32-bit word layout; on little-endian hosts A8B8G8R8 (ABGR) is therefore
+    // the matching R,G,B,A byte layout. ARGB would reinterpret those bytes as
+    // B,G,R,A and swap red with blue in the WebRTC stream.
     resource.bufferFormat = NV_ENC_BUFFER_FORMAT_ABGR;
     resource.bufferUsage = NV_ENC_INPUT_IMAGE;
     if (api_.nvEncRegisterResource(encoder_, &resource) != NV_ENC_SUCCESS) {
