@@ -41,6 +41,7 @@ grep -q '<exec_depend>rospy</exec_depend>' package.xml
 grep -q '<depend>foxglove_msgs</depend>' package.xml
 grep -q '<depend>xgc_camera_msgs</depend>' package.xml
 grep -q '^Depends: libgl1, libglew2.1, libjpeg8, python3-numpy, python3-opencv, python3-yaml, ros-noetic-camera-calibration, ros-noetic-foxglove-msgs,' .xgc2/scripts/package_debs.sh
+grep -q 'ros-noetic-xgc2-camera-msgs (>= 1.2.0-8)' .xgc2/scripts/package_debs.sh
 grep -q '^  recommends:$' .xgc2/product.yml
 grep -q '^Recommends: ros-noetic-xgc2-gazebo-sim-vrpn-bridge' .xgc2/scripts/package_debs.sh
 

@@ -29,5 +29,8 @@
     <param name="fps" value="20.0"/>
     <param name="hfov" value="1.3962634015954636"/>
     <param name="stream_info_topic" value="/xgc/test/camera/stream_info"/>
+    <param name="video_topic" value="/xgc/test/camera/video_h264"/>
+    <param name="frame_timing_topic" value="/xgc/test/camera/frame_timing"/>
+    <param name="camera_info_topic" value="/xgc/camera/world/camera_info"/>
   </test>
 </launch>

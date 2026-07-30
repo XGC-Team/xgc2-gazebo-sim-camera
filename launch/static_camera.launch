@@ -74,8 +74,6 @@
   <!-- Stable XGC-owned camera contract. The Gazebo topics above remain an
        implementation detail and are never required by visualization clients. -->
   <arg name="publish_xgc_contract" default="true"/>
-  <arg name="xgc_camera_link_frame" default="xgc_world_camera_link"/>
-  <arg name="xgc_optical_frame" default="xgc_world_camera_optical_frame"/>
   <arg name="xgc_compressed_image_topic" default="/xgc/camera/world/image_raw/compressed"/>
   <arg name="xgc_camera_info_topic" default="/xgc/camera/world/camera_info"/>
   <arg name="xgc_transform_topic" default="/xgc/camera/world/tf"/>
@@ -148,8 +146,11 @@
     <param name="output_camera_info_topic" value="$(arg xgc_camera_info_topic)"/>
     <param name="output_transform_topic" value="$(arg xgc_transform_topic)"/>
     <param name="parent_frame" value="$(arg parent_frame)"/>
-    <param name="camera_link_frame" value="$(arg xgc_camera_link_frame)"/>
-    <param name="optical_frame" value="$(arg xgc_optical_frame)"/>
+    <!-- CameraInfo and camera-local TF share the exact frames embedded by the
+         media plugin in video, timing, stream metadata, and snapshots. There
+         is intentionally no second independently configurable frame pair. -->
+    <param name="camera_link_frame" value="$(arg camera_link_frame)"/>
+    <param name="optical_frame" value="$(arg optical_frame)"/>
     <param name="x" value="$(arg x)"/>
     <param name="y" value="$(arg y)"/>
     <param name="z" value="$(arg z)"/>

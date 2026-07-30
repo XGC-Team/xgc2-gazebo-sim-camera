@@ -26,7 +26,10 @@ The live WebUI path does not publish raw or periodic JPEG video through ROS. The
 plugin exposes a private Unix control socket under `/tmp/xgc2/media/`; the media
 edge activates the sensor only while a consumer needs live video. An explicit
 snapshot request renders one frame and returns its JPEG, RGB pixels, source
-timestamp, pinhole camera matrix, and zero-distortion vector for calibration.
+timestamp, pinhole camera matrix, zero-distortion vector, and the exact
+optical-frame render pose with its declared pose frame. The pose and pixels are
+sampled from the same Gazebo render transaction rather than joined later
+through TF.
 The older ROS JPEG preview topic is compatibility-only and its continuous
 snapshot timer is disabled by default; set
 `enable_continuous_jpeg_preview:=true` only for a consumer that still requires
@@ -195,7 +198,8 @@ through xacro. While the source is inactive, the Gazebo contract first calls
 `describe` and validates the actual source identity, H264/RTP contract and
 loopback endpoint, dimensions, frame rate, frame ID, and capabilities. It then
 requests one explicit snapshot and validates dimensions, JPEG/RGB payloads,
-pinhole intrinsics, and TF without requiring NVENC video encoding in the test.
+pinhole intrinsics, render pose, pose-frame identity, and TF without requiring
+NVENC video encoding in the test.
 The multi-architecture Docker build sources the just-built Catkin overlay and
 runs this snapshot contract through Xvfb with Mesa software rendering. It is
 therefore valid on an arm64 runner without a GPU; hardware NVENC remains a

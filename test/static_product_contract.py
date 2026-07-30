@@ -83,6 +83,10 @@ assert "snapshot_pose_frame_id:=$(arg snapshot_pose_frame_id)" in launch
 assert '<arg name="publish_encoded_video" default="true"/>' in launch
 assert '<arg name="enable_continuous_jpeg_preview" default="false"/>' in launch
 assert 'name="enable_continuous_jpeg_preview"' in launch
+assert 'name="xgc_camera_link_frame"' not in launch
+assert 'name="xgc_optical_frame"' not in launch
+assert '<param name="camera_link_frame" value="$(arg camera_link_frame)"/>' in launch
+assert '<param name="optical_frame" value="$(arg optical_frame)"/>' in launch
 
 for calibration_launch in (intrinsic, extrinsic):
     assert 'name="camera_profile" default="world_ultrawide_4k30_130"' in calibration_launch

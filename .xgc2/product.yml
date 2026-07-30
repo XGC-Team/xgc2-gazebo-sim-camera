@@ -39,7 +39,7 @@ apt:
   - ros-noetic-sensor-msgs
   - ros-noetic-tf
   - ros-noetic-xacro
-  - ros-noetic-xgc2-camera-msgs
+  - ros-noetic-xgc2-camera-msgs (>= 1.2.0-8)
   - ros-noetic-xgc2-gazebo-sim-worlds (>= 1.1.0-14)
   recommends:
   - ros-noetic-xgc2-gazebo-sim-vrpn-bridge (>= 1.1.0-13)

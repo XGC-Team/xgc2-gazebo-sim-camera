@@ -99,7 +99,10 @@ additional camera.
 
 The private source-control `snapshot` transaction remains the authoritative
 full-resolution still-image path. It renders on demand and returns JPEG, an
-optional RGB payload, source timestamp, and intrinsics. It works even when no
+optional RGB payload, source timestamp, intrinsics, and the exact optical-frame
+world pose captured by that render transaction. `poseFrameId` is independently
+configured and defaults to `world`; it does not borrow the ROS camera parent
+frame because the value comes from Gazebo `WorldPose()`. It works even when no
 live video consumer is active. Both `describe` and every successful snapshot
 declare `timestampClockDomain: "simulation"`; `timestampNanoseconds` is
 therefore directly comparable with the encoded-frame source timestamp and ROS

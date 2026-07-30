@@ -8,7 +8,9 @@ import unittest
 
 import rospy
 import tf
-from xgc_camera_msgs.msg import StreamInfo
+from foxglove_msgs.msg import CompressedVideo
+from sensor_msgs.msg import CameraInfo
+from xgc_camera_msgs.msg import FrameTiming, StreamInfo
 
 
 def receive_line(connection, maximum_bytes=65536):
@@ -118,6 +120,15 @@ class CameraContractTest(unittest.TestCase):
         stream_info_topic = rospy.get_param(
             "~stream_info_topic", "/xgc/test/camera/stream_info"
         )
+        video_topic = rospy.get_param(
+            "~video_topic", "/xgc/test/camera/video_h264"
+        )
+        frame_timing_topic = rospy.get_param(
+            "~frame_timing_topic", "/xgc/test/camera/frame_timing"
+        )
+        camera_info_topic = rospy.get_param(
+            "~camera_info_topic", "/xgc/camera/world/camera_info"
+        )
 
         stream_info = rospy.wait_for_message(
             stream_info_topic, StreamInfo, timeout=30.0
@@ -143,6 +154,47 @@ class CameraContractTest(unittest.TestCase):
         self.assertAlmostEqual(stream_info.nominal_frame_rate, fps)
         self.assertEqual(stream_info.rtp_clock_rate, 90000)
         self.assertEqual(stream_info.rtp_payload_type, 96)
+
+        # Subscribing to the encoded topic activates the demand-driven encoder.
+        # Verify the three per-frame/per-stream ROS messages and the separately
+        # published CameraInfo all identify the same optical TF child.
+        camera_info = rospy.wait_for_message(
+            camera_info_topic, CameraInfo, timeout=30.0
+        )
+        received = {}
+
+        def receive_video(message):
+            received.setdefault("video", message)
+
+        def receive_timing(message):
+            received.setdefault("timing", message)
+
+        # Keep both subscriptions alive together. The video connection is what
+        # activates rendering, while timing is emitted beside each encoded AU.
+        video_subscription = rospy.Subscriber(
+            video_topic, CompressedVideo, receive_video, queue_size=1
+        )
+        timing_subscription = rospy.Subscriber(
+            frame_timing_topic, FrameTiming, receive_timing, queue_size=1
+        )
+        deadline = time.monotonic() + 30.0
+        try:
+            while (
+                ("video" not in received or "timing" not in received)
+                and time.monotonic() < deadline
+                and not rospy.is_shutdown()
+            ):
+                time.sleep(0.01)
+        finally:
+            video_subscription.unregister()
+            timing_subscription.unregister()
+        self.assertIn("video", received)
+        self.assertIn("timing", received)
+        video = received["video"]
+        timing = received["timing"]
+        self.assertEqual(camera_info.header.frame_id, frame_id)
+        self.assertEqual(video.frame_id, frame_id)
+        self.assertEqual(timing.frame_id, frame_id)
 
         # The plugin starts inactive. Describe must report the resolved Gazebo
         # sensor contract without activating rendering or allocating NVENC.

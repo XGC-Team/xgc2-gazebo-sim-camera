@@ -53,7 +53,7 @@ Section: misc
 Priority: optional
 Architecture: ${ARCH}
 Maintainer: XGC2 <dev@xiaokang.ink>
-Depends: libgl1, libglew2.1, libjpeg8, python3-numpy, python3-opencv, python3-yaml, ros-noetic-camera-calibration, ros-noetic-foxglove-msgs, ros-noetic-gazebo-msgs, ros-noetic-gazebo-plugins, ros-noetic-gazebo-ros, ros-noetic-roscpp, ros-noetic-rospy, ros-noetic-roslaunch, ros-noetic-rostopic, ros-noetic-rviz, ros-noetic-sensor-msgs, ros-noetic-tf, ros-noetic-xacro, ros-noetic-xgc2-camera-msgs, ros-noetic-xgc2-gazebo-sim-worlds (>= 1.1.0-14)
+Depends: libgl1, libglew2.1, libjpeg8, python3-numpy, python3-opencv, python3-yaml, ros-noetic-camera-calibration, ros-noetic-foxglove-msgs, ros-noetic-gazebo-msgs, ros-noetic-gazebo-plugins, ros-noetic-gazebo-ros, ros-noetic-roscpp, ros-noetic-rospy, ros-noetic-roslaunch, ros-noetic-rostopic, ros-noetic-rviz, ros-noetic-sensor-msgs, ros-noetic-tf, ros-noetic-xacro, ros-noetic-xgc2-camera-msgs (>= 1.2.0-8), ros-noetic-xgc2-gazebo-sim-worlds (>= 1.1.0-14)
 Recommends: ros-noetic-xgc2-gazebo-sim-vrpn-bridge (>= 1.1.0-13)
 Description: XGC2 independent Gazebo Classic fixed-site RGB camera
 EOF
