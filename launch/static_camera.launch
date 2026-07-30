@@ -17,6 +17,11 @@
   <arg name="media_rtp_host" default="127.0.0.1"/>
   <arg name="media_rtp_port" default="5004"/>
   <arg name="media_control_socket" default="/tmp/xgc2/media/usb_cam.sock"/>
+  <arg name="publish_encoded_video" default="true"/>
+  <arg name="encoded_video_topic" default="/xgc/camera/world/video_h264"/>
+  <arg name="frame_timing_topic" default="/xgc/camera/world/frame_timing"/>
+  <arg name="stream_info_topic" default="/xgc/camera/world/stream_info"/>
+  <arg name="encoded_publisher_queue_capacity" default="8"/>
   <!--
     The encoder has three deliberately separate budgets:
       * average bitrate: sustainable link budget;
@@ -33,6 +38,10 @@
   <arg name="gt_camera_link_frame" default="usb_cam_link_gt"/>
   <arg name="gt_optical_frame" default="usb_cam_optical_frame_gt"/>
   <arg name="parent_frame" default="world"/>
+  <!-- camera_->WorldPose() is expressed in the Gazebo world frame. Keep this
+       independent from the ROS TF parent override so snapshot evidence never
+       mislabels its coordinate domain. -->
+  <arg name="snapshot_pose_frame_id" default="world"/>
   <arg name="width" default="profile"/>
   <arg name="height" default="profile"/>
   <arg name="fps" default="profile"/>
@@ -70,6 +79,9 @@
   <arg name="xgc_compressed_image_topic" default="/xgc/camera/world/image_raw/compressed"/>
   <arg name="xgc_camera_info_topic" default="/xgc/camera/world/camera_info"/>
   <arg name="xgc_transform_topic" default="/xgc/camera/world/tf"/>
+  <!-- Compatibility-only JPEG polling. Explicit snapshots remain available
+       through the source control socket regardless of this setting. -->
+  <arg name="enable_continuous_jpeg_preview" default="false"/>
   <arg name="xgc_image_publish_rate" default="10.0"/>
 
   <param name="use_sim_time" value="$(arg use_sim_time)"/>
@@ -99,6 +111,12 @@
            static:=$(arg static)
            media_source_id:=$(arg media_source_id) media_rtp_host:=$(arg media_rtp_host)
            media_rtp_port:=$(arg media_rtp_port) media_control_socket:=$(arg media_control_socket)
+           snapshot_pose_frame_id:=$(arg snapshot_pose_frame_id)
+           publish_encoded_video:=$(arg publish_encoded_video)
+           encoded_video_topic:=$(arg encoded_video_topic)
+           frame_timing_topic:=$(arg frame_timing_topic)
+           stream_info_topic:=$(arg stream_info_topic)
+           encoded_publisher_queue_capacity:=$(arg encoded_publisher_queue_capacity)
            media_bitrate:=$(arg media_bitrate) media_max_bitrate:=$(arg media_max_bitrate)
            media_pacing_bitrate:=$(arg media_pacing_bitrate)
            media_vbv_buffer_milliseconds:=$(arg media_vbv_buffer_milliseconds)
@@ -122,6 +140,8 @@
     <param name="hfov_degrees" value="$(arg hfov_degrees)"/>
     <param name="hfov" value="$(arg hfov)"/>
     <param name="media_control_socket" value="$(arg media_control_socket)"/>
+    <param name="enable_continuous_jpeg_preview"
+           value="$(arg enable_continuous_jpeg_preview)"/>
     <param name="image_publish_rate" value="$(arg xgc_image_publish_rate)"/>
     <param name="snapshot_timeout" value="5.0"/>
     <param name="output_compressed_image_topic" value="$(arg xgc_compressed_image_topic)"/>

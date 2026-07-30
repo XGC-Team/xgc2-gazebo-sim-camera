@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Publish a world camera through the stable XGC camera contract.
 
-The world-camera product owns this contract.  It publishes simulation-truth
-intrinsics and extrinsics immediately from its frozen launch configuration,
-then obtains JPEG frames from its media source only while a downstream client
-is subscribed.  Consumers such as Lichtblick neither infer calibration nor
-depend on Gazebo-native ROS topics.
+The world-camera product owns this contract. It publishes simulation-truth
+intrinsics and extrinsics immediately from its frozen launch configuration.
+Periodic JPEG snapshot polling is a disabled-by-default compatibility mode;
+live and recorded video uses the source plugin's encoded H264 topics.
 """
 
 import json
@@ -53,6 +52,17 @@ def _receive_exact(connection, size, initial=b""):
 
 def _profile_value(argument, fallback, convert):
     return convert(fallback if str(argument) == "profile" else argument)
+
+
+def _boolean(value):
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in ("1", "true", "yes", "on"):
+        return True
+    if normalized in ("0", "false", "no", "off"):
+        return False
+    raise ValueError("expected a boolean value")
 
 
 def _configured_intrinsics():
@@ -167,17 +177,22 @@ class CameraContractPublisher:
         transform_rate = float(rospy.get_param("~transform_publish_rate", 10.0))
         if transform_rate <= 0.0:
             raise ValueError("transform_publish_rate must be positive")
-        image_rate = float(rospy.get_param("~image_publish_rate", 10.0))
-        if image_rate <= 0.0:
-            raise ValueError("image_publish_rate must be positive")
         self._transform_timer = rospy.Timer(
             rospy.Duration(1.0 / transform_rate),
             self._publish_transforms,
         )
-        self._image_timer = rospy.Timer(
-            rospy.Duration(1.0 / image_rate),
-            self._publish_media_snapshot,
+        self._image_timer = None
+        self._continuous_jpeg_preview = _boolean(
+            rospy.get_param("~enable_continuous_jpeg_preview", False)
         )
+        if self._continuous_jpeg_preview:
+            image_rate = float(rospy.get_param("~image_publish_rate", 10.0))
+            if image_rate <= 0.0:
+                raise ValueError("image_publish_rate must be positive")
+            self._image_timer = rospy.Timer(
+                rospy.Duration(1.0 / image_rate),
+                self._publish_media_snapshot,
+            )
         # Intrinsics and extrinsics are truth owned by this product, not data
         # inferred from the simulator image transport. Publish both at startup.
         self._publish_camera_info(rospy.Time.now())

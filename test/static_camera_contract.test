@@ -9,6 +9,9 @@
     <arg name="media_source_id" value="contract_camera"/>
     <arg name="media_rtp_port" value="15004"/>
     <arg name="media_control_socket" value="/tmp/xgc2/media/contract_camera.sock"/>
+    <arg name="encoded_video_topic" value="/xgc/test/camera/video_h264"/>
+    <arg name="frame_timing_topic" value="/xgc/test/camera/frame_timing"/>
+    <arg name="stream_info_topic" value="/xgc/test/camera/stream_info"/>
     <arg name="parent_frame" value="map"/>
     <arg name="mode" value="truth"/>
     <arg name="publish_truth_tf" value="true"/>
@@ -25,5 +28,6 @@
     <param name="height" value="720"/>
     <param name="fps" value="20.0"/>
     <param name="hfov" value="1.3962634015954636"/>
+    <param name="stream_info_topic" value="/xgc/test/camera/stream_info"/>
   </test>
 </launch>

@@ -8,6 +8,7 @@ import unittest
 
 import rospy
 import tf
+from xgc_camera_msgs.msg import StreamInfo
 
 
 def receive_line(connection, maximum_bytes=65536):
@@ -114,6 +115,34 @@ class CameraContractTest(unittest.TestCase):
         height = int(rospy.get_param("~height", 720))
         fps = float(rospy.get_param("~fps", 20.0))
         hfov = float(rospy.get_param("~hfov", 1.3962634015954636))
+        stream_info_topic = rospy.get_param(
+            "~stream_info_topic", "/xgc/test/camera/stream_info"
+        )
+
+        stream_info = rospy.wait_for_message(
+            stream_info_topic, StreamInfo, timeout=30.0
+        )
+        self.assertEqual(stream_info.contract_version, 1)
+        self.assertEqual(stream_info.stream_id, source_id)
+        self.assertEqual(stream_info.frame_id, frame_id)
+        self.assertNotEqual(stream_info.epoch, 0)
+        self.assertEqual(stream_info.codec, StreamInfo.CODEC_H264)
+        self.assertEqual(
+            stream_info.bitstream_format,
+            StreamInfo.BITSTREAM_FORMAT_ANNEX_B,
+        )
+        self.assertEqual(
+            stream_info.clock_domain,
+            StreamInfo.CLOCK_DOMAIN_SIMULATION,
+        )
+        self.assertEqual(
+            stream_info.timestamp_reference,
+            StreamInfo.TIMESTAMP_REFERENCE_RENDER_COMPLETE,
+        )
+        self.assertEqual((stream_info.width, stream_info.height), (width, height))
+        self.assertAlmostEqual(stream_info.nominal_frame_rate, fps)
+        self.assertEqual(stream_info.rtp_clock_rate, 90000)
+        self.assertEqual(stream_info.rtp_payload_type, 96)
 
         # The plugin starts inactive. Describe must report the resolved Gazebo
         # sensor contract without activating rendering or allocating NVENC.
@@ -133,6 +162,7 @@ class CameraContractTest(unittest.TestCase):
                 "height": height,
                 "fps": fps,
                 "frameId": frame_id,
+                "timestampClockDomain": "simulation",
                 "capabilities": [
                     "set-active",
                     "request-keyframe",
@@ -147,6 +177,7 @@ class CameraContractTest(unittest.TestCase):
         self.assertEqual((header["width"], header["height"]), (width, height))
         self.assertEqual(header["pixelFormat"], "rgb8")
         self.assertGreaterEqual(header["timestampNanoseconds"], 0)
+        self.assertEqual(header["timestampClockDomain"], "simulation")
         self.assertEqual(len(rgb), width * height * 3)
         self.assertGreater(len(jpeg), 4)
         self.assertEqual(jpeg[:2], b"\xff\xd8")

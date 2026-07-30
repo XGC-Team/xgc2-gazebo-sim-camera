@@ -1,9 +1,13 @@
 // XGC Gazebo Classic camera source.
 //
-// The normal frame path intentionally never enters ROS or system memory:
-//   OGRE render texture -> OpenGL RGBA texture -> NVENC H264 -> loopback RTP.
-// A CPU RGB/JPEG readback exists only for an explicit calibration snapshot
-// transaction received over a private Unix-domain socket.
+// The normal frame path performs one GPU encode:
+//   OGRE render texture -> OpenGL RGBA texture -> NVENC H264 Annex-B AU.
+// Each AU is fanned out to loopback RTP and a bounded asynchronous ROS
+// publisher queue. ROS serialization and transport never run in the render
+// callback. A CPU RGB/JPEG readback exists only for an explicit calibration
+// snapshot transaction received over a private Unix-domain socket.
+
+#include "fresh_render_gate.h"
 
 #include <gazebo/common/Console.hh>
 #include <gazebo/common/Events.hh>
@@ -26,6 +30,11 @@
 
 #include <jpeglib.h>
 #include <ffnvcodec/nvEncodeAPI.h>
+
+#include <foxglove_msgs/CompressedVideo.h>
+#include <ros/ros.h>
+#include <xgc_camera_msgs/FrameTiming.h>
+#include <xgc_camera_msgs/StreamInfo.h>
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -67,9 +76,13 @@ constexpr std::size_t kMaximumControlRequestBytes = 64 * 1024;
 constexpr std::size_t kMaximumRtpPayloadBytes = 1'200;
 constexpr std::size_t kMinimumPacedQueueBytes = 256 * 1024;
 constexpr int kSourceControlProtocolVersion = 1;
+constexpr const char *kSourceTimestampClockDomain = "simulation";
 constexpr std::uint8_t kH264PayloadType = 96;
 constexpr std::uint32_t kRtpClockRate = 90'000;
 constexpr std::uint32_t kRtpSSRC = 0x58474332;  // "XGC2"
+constexpr std::size_t kDefaultROSPublisherQueueCapacity = 8;
+constexpr std::size_t kMaximumPendingEncodedFrames = 4;
+constexpr std::size_t kMaximumPendingDiagnostics = 64;
 
 using NvEncodeAPICreateInstance = NVENCSTATUS (NVENCAPI *)(NV_ENCODE_API_FUNCTION_LIST *);
 
@@ -278,11 +291,13 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     // destroys its listener registry.
     renderTarget_ = nullptr;
     StopControlServer();
+    StopROSPublisher();
     StopRTPPacer();
     if (rtpSocket_ >= 0) {
       close(rtpSocket_);
       rtpSocket_ = -1;
     }
+    StopDiagnosticReporter();
     // GL/NVENC resources are intentionally released from OnPostRender while a
     // valid Gazebo render context is current. Process exit owns any final
     // teardown that occurs after Gazebo has removed that context.
@@ -297,6 +312,8 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
 
     sourceID_ = SDFValue<std::string>(sdf, "sourceId", "usb_cam");
     frameID_ = SDFValue<std::string>(sdf, "frameId", "usb_cam_optical_frame");
+    snapshotPoseFrameID_ =
+        SDFValue<std::string>(sdf, "snapshotPoseFrameId", "world");
     rtpHost_ = SDFValue<std::string>(sdf, "rtpHost", "127.0.0.1");
     rtpPort_ = SDFValue<int>(sdf, "rtpPort", 5004);
     controlSocketPath_ = SDFValue<std::string>(sdf, "controlSocket", "/tmp/xgc2/media/usb_cam.sock");
@@ -305,10 +322,28 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     pacingBitrate_ = SDFValue<int>(sdf, "pacingBitrate", maxBitrate_);
     vbvBufferMilliseconds_ = std::clamp(SDFValue<int>(sdf, "vbvBufferMilliseconds", 500), 50, 2'000);
     jpegQuality_ = std::clamp(SDFValue<int>(sdf, "jpegQuality", 90), 50, 100);
+    rosPublishingEnabled_ = SDFValue<bool>(sdf, "rosPublishEnabled", true);
+    rosVideoTopic_ = SDFValue<std::string>(
+        sdf, "rosVideoTopic", "/xgc/camera/world/video_h264");
+    rosFrameTimingTopic_ = SDFValue<std::string>(
+        sdf, "rosFrameTimingTopic", "/xgc/camera/world/frame_timing");
+    rosStreamInfoTopic_ = SDFValue<std::string>(
+        sdf, "rosStreamInfoTopic", "/xgc/camera/world/stream_info");
+    rosPublisherQueueCapacity_ = static_cast<std::size_t>(std::clamp(
+        SDFValue<int>(
+            sdf,
+            "rosPublisherQueueCapacity",
+            static_cast<int>(kDefaultROSPublisherQueueCapacity)),
+        1,
+        128));
 
-    if (!IsSafeIdentifier(sourceID_) || frameID_.empty() || rtpPort_ < 1 || rtpPort_ > 65535 ||
+    if (!IsSafeIdentifier(sourceID_) || frameID_.empty() ||
+        snapshotPoseFrameID_.empty() || rtpPort_ < 1 || rtpPort_ > 65535 ||
         (rtpHost_ != "127.0.0.1" && rtpHost_ != "localhost") ||
-        controlSocketPath_.rfind("/tmp/xgc2/media/", 0) != 0 || bitrate_ < 128'000) {
+        controlSocketPath_.rfind("/tmp/xgc2/media/", 0) != 0 || bitrate_ < 128'000 ||
+        (rosPublishingEnabled_ &&
+         (rosVideoTopic_.empty() || rosFrameTimingTopic_.empty() ||
+          rosStreamInfoTopic_.empty()))) {
       gzerr << "xgc_media_camera has invalid private media source configuration\n";
       return;
     }
@@ -343,13 +378,39 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
       rtpSocket_ = -1;
       return;
     }
+    if (!StartDiagnosticReporter()) {
+      StopControlServer();
+      StopRTPPacer();
+      close(rtpSocket_);
+      rtpSocket_ = -1;
+      return;
+    }
+
+    streamWidth_ = sensor_->ImageWidth();
+    streamHeight_ = sensor_->ImageHeight();
+    streamFrameRate_ = std::max(0.1, static_cast<double>(sensor_->UpdateRate()));
+    streamKeyframeIntervalFrames_ = std::max<std::uint32_t>(
+        1, static_cast<std::uint32_t>(std::llround(streamFrameRate_ * 2.0)));
+    streamEpoch_ = InitialEpochToken();
+    pendingDiscontinuity_ =
+        xgc_camera_msgs::FrameTiming::DISCONTINUITY_STREAM_START;
+    rosWaitingForIDR_ = true;
+    if (!StartROSPublisher()) {
+      gzwarn << "xgc_media_camera will continue RTP service without ROS encoded-video publication\n";
+    }
 
     // Render only on demand. The global post-render callback remains available
     // to turn a camera back on for a new WebRTC consumer or one snapshot.
     sensor_->SetActive(false);
     postRenderConnection_ = event::Events::ConnectPostRender(
         std::bind(&XGCMediaCameraPlugin::OnPostRender, this));
-    gzmsg << "xgc_media_camera source " << sourceID_ << " serves H264/RTP through 127.0.0.1:" << rtpPort_ << "\n";
+    std::ostringstream startupMessage;
+    startupMessage << "xgc_media_camera source " << sourceID_
+                   << " serves H264/RTP through 127.0.0.1:" << rtpPort_;
+    if (rosPublishingEnabled_) {
+      startupMessage << " and H264/Annex-B on " << rosVideoTopic_;
+    }
+    gzmsg << startupMessage.str() << "\n";
   }
 
  private:
@@ -363,6 +424,10 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     unsigned int height = 0;
     std::array<double, 9> cameraMatrix{};
     std::array<double, 5> distortion{};
+    std::array<double, 3> renderPosition{};
+    std::array<double, 4> renderOrientation{};
+    std::string poseFrameID;
+    bool renderPoseValid = false;
     std::vector<std::uint8_t> rgb;
     std::vector<std::uint8_t> jpeg;
   };
@@ -377,6 +442,439 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     std::uint64_t generation = 0;
     std::chrono::nanoseconds framePeriod{};
   };
+
+  struct PendingEncodedFrame {
+    std::uint64_t encoderTimestamp = 0;
+    std::int64_t sourceTimeNanoseconds = 0;
+    std::uint64_t sourceSequence = 0;
+  };
+
+  struct QueuedROSFrame {
+    std::vector<std::uint8_t> annexB;
+    std::int64_t sourceTimeNanoseconds = 0;
+    std::uint64_t sourceSequence = 0;
+    std::uint64_t epoch = 0;
+    std::uint64_t frameSequence = 0;
+    std::uint64_t generation = 0;
+    std::uint32_t rtpTimestamp = 0;
+    std::uint32_t droppedFramesBefore = 0;
+    std::uint8_t discontinuity =
+        xgc_camera_msgs::FrameTiming::DISCONTINUITY_NONE;
+    bool keyframe = false;
+  };
+
+  struct StreamInfoSnapshot {
+    std::uint64_t epoch = 0;
+    std::uint64_t generation = 0;
+    unsigned int width = 0;
+    unsigned int height = 0;
+    double frameRate = 0.0;
+    std::uint32_t keyframeIntervalFrames = 0;
+  };
+
+  std::uint64_t InitialEpochToken() const {
+    const auto now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count();
+    std::uint64_t token = static_cast<std::uint64_t>(now);
+    token ^= static_cast<std::uint64_t>(getpid()) << 32U;
+    token ^= static_cast<std::uint64_t>(
+        reinterpret_cast<std::uintptr_t>(this));
+    return token == 0 ? 1 : token;
+  }
+
+  std::uint64_t NextEpochToken(std::uint64_t current) const {
+    ++current;
+    return current == 0 ? 1 : current;
+  }
+
+  bool StartROSPublisher() {
+    if (!rosPublishingEnabled_) {
+      return true;
+    }
+    if (!ros::isInitialized()) {
+      gzwarn << "xgc_media_camera cannot publish encoded video because ROS is not initialized\n";
+      rosPublishingEnabled_ = false;
+      return false;
+    }
+    try {
+      rosNode_ = std::make_unique<ros::NodeHandle>();
+      {
+        std::lock_guard<std::mutex> lock(rosPublisherMutex_);
+        rosPublisherStopping_ = false;
+      }
+      {
+        std::lock_guard<std::mutex> lock(rosConsumerMutex_);
+        rosSubscriberCallbacksEnabled_ = true;
+        rosSubscriberConnectionCount_ = 0;
+      }
+      const ros::SubscriberStatusCallback connected =
+          [this](const ros::SingleSubscriberPublisher &) {
+            OnROSSubscriberConnected();
+          };
+      const ros::SubscriberStatusCallback disconnected =
+          [this](const ros::SingleSubscriberPublisher &) {
+            OnROSSubscriberDisconnected();
+          };
+      ros::AdvertiseOptions videoOptions;
+      videoOptions.init<foxglove_msgs::CompressedVideo>(
+          rosVideoTopic_,
+          static_cast<std::uint32_t>(rosPublisherQueueCapacity_),
+          connected,
+          disconnected);
+      rosVideoPublisher_ = rosNode_->advertise(videoOptions);
+      ros::AdvertiseOptions timingOptions;
+      timingOptions.init<xgc_camera_msgs::FrameTiming>(
+          rosFrameTimingTopic_,
+          static_cast<std::uint32_t>(rosPublisherQueueCapacity_),
+          connected,
+          disconnected);
+      rosFrameTimingPublisher_ = rosNode_->advertise(timingOptions);
+      rosStreamInfoPublisher_ =
+          rosNode_->advertise<xgc_camera_msgs::StreamInfo>(
+              rosStreamInfoTopic_, 1, true);
+      {
+        std::lock_guard<std::mutex> lock(rosPublisherMutex_);
+        rosStreamInfoPending_ = true;
+      }
+      rosPublisherThread_ =
+          std::thread(&XGCMediaCameraPlugin::ROSPublisherLoop, this);
+      rosPublisherCondition_.notify_one();
+      return true;
+    } catch (const std::exception &error) {
+      gzwarn << "xgc_media_camera could not start its ROS publisher: "
+             << error.what() << "\n";
+      rosVideoPublisher_.shutdown();
+      rosFrameTimingPublisher_.shutdown();
+      rosStreamInfoPublisher_.shutdown();
+      rosNode_.reset();
+      {
+        std::lock_guard<std::mutex> lock(rosConsumerMutex_);
+        rosSubscriberCallbacksEnabled_ = false;
+        rosSubscriberConnectionCount_ = 0;
+        rosConsumersActive_.store(false);
+      }
+      rosPublishingEnabled_ = false;
+      return false;
+    }
+  }
+
+  void StopROSPublisher() {
+    {
+      std::lock_guard<std::mutex> lock(rosPublisherMutex_);
+      rosPublisherStopping_ = true;
+      rosFrameQueue_.clear();
+      rosStreamInfoPending_ = false;
+      ++rosPublisherGeneration_;
+    }
+    {
+      std::lock_guard<std::mutex> lock(rosConsumerMutex_);
+      rosSubscriberCallbacksEnabled_ = false;
+      rosSubscriberConnectionCount_ = 0;
+      rosConsumersActive_.store(false);
+    }
+    rosPublisherCondition_.notify_all();
+    if (rosPublisherThread_.joinable()) {
+      rosPublisherThread_.join();
+    }
+    rosVideoPublisher_.shutdown();
+    rosFrameTimingPublisher_.shutdown();
+    rosStreamInfoPublisher_.shutdown();
+    rosNode_.reset();
+  }
+
+  void AdvanceROSEpochLocked(
+      std::uint8_t discontinuity,
+      std::uint64_t additionallyDroppedFrames = 0) {
+    rosDroppedFramesBeforeIDR_ +=
+        static_cast<std::uint64_t>(rosFrameQueue_.size()) +
+        additionallyDroppedFrames;
+    rosFrameQueue_.clear();
+    streamEpoch_ = NextEpochToken(streamEpoch_);
+    nextPublishedFrameSequence_ = 0;
+    pendingDiscontinuity_ = discontinuity;
+    rosWaitingForIDR_ = true;
+    ++rosPublisherGeneration_;
+    rosStreamInfoPending_ = true;
+  }
+
+  void BeginROSEpoch(std::uint8_t discontinuity) {
+    if (!rosPublishingEnabled_) {
+      return;
+    }
+    {
+      std::lock_guard<std::mutex> lock(rosPublisherMutex_);
+      if (rosPublisherStopping_) {
+        return;
+      }
+      AdvanceROSEpochLocked(discontinuity);
+    }
+    forceKeyframe_.store(true);
+    rosPublisherCondition_.notify_one();
+  }
+
+  bool ROSHasPendingEpoch() const {
+    std::lock_guard<std::mutex> lock(rosPublisherMutex_);
+    return rosWaitingForIDR_ && nextPublishedFrameSequence_ == 0;
+  }
+
+  void OnROSSubscriberConnected() {
+    bool firstConnection = false;
+    {
+      std::lock_guard<std::mutex> lock(rosConsumerMutex_);
+      if (!rosSubscriberCallbacksEnabled_) {
+        return;
+      }
+      firstConnection = rosSubscriberConnectionCount_ == 0;
+      ++rosSubscriberConnectionCount_;
+      if (!firstConnection) {
+        // Set this before releasing the connection lock so the render thread
+        // cannot begin another delta frame after observing the new consumer.
+        forceKeyframe_.store(true);
+      }
+    }
+    if (firstConnection) {
+      BeginROSEpoch(
+          xgc_camera_msgs::FrameTiming::DISCONTINUITY_STREAM_START);
+      if (!desiredActive_.load()) {
+        // A dormant CameraSensor can first replay its pre-deactivation render
+        // target. Arm the render-thread freshness gate before making ROS
+        // consumption visible to OnPostRender.
+        rosFreshRenderGeneration_.fetch_add(1);
+      }
+      std::lock_guard<std::mutex> lock(rosConsumerMutex_);
+      if (rosSubscriberCallbacksEnabled_ &&
+          rosSubscriberConnectionCount_ > 0) {
+        // Activate only after the epoch transition requested its IDR. This
+        // prevents a dormant but not-yet-destroyed encoder from publishing one
+        // old-epoch P-frame during a first-connection race.
+        rosConsumersActive_.store(true);
+      }
+      return;
+    }
+    // ROS1 does not replay the previous GOP to a late subscriber. Request an
+    // IDR for every additional connection so it becomes independently
+    // decodable without disrupting the epoch seen by existing recorders.
+  }
+
+  void OnROSSubscriberDisconnected() {
+    bool lastConnection = false;
+    {
+      std::lock_guard<std::mutex> lock(rosConsumerMutex_);
+      if (!rosSubscriberCallbacksEnabled_ ||
+          rosSubscriberConnectionCount_ == 0) {
+        return;
+      }
+      --rosSubscriberConnectionCount_;
+      lastConnection = rosSubscriberConnectionCount_ == 0;
+      if (lastConnection) {
+        rosConsumersActive_.store(false);
+      }
+    }
+    if (lastConnection) {
+      std::lock_guard<std::mutex> lock(rosPublisherMutex_);
+      if (rosPublisherStopping_) {
+        return;
+      }
+      rosDroppedFramesBeforeIDR_ +=
+          static_cast<std::uint64_t>(rosFrameQueue_.size());
+      rosFrameQueue_.clear();
+      ++rosPublisherGeneration_;
+    }
+  }
+
+  bool EnqueueROSAccessUnit(
+      const std::uint8_t *data,
+      std::size_t size,
+      std::uint32_t rtpTimestamp,
+      bool keyframe,
+      const PendingEncodedFrame &metadata) {
+    if (!rosPublishingEnabled_ || !rosConsumersActive_.load() ||
+        !data || size == 0) {
+      return false;
+    }
+
+    QueuedROSFrame frame;
+    frame.annexB.assign(data, data + size);
+    frame.sourceTimeNanoseconds = metadata.sourceTimeNanoseconds;
+    frame.sourceSequence = metadata.sourceSequence;
+    frame.rtpTimestamp = rtpTimestamp;
+    frame.keyframe = keyframe;
+
+    {
+      std::lock_guard<std::mutex> lock(rosPublisherMutex_);
+      if (rosPublisherStopping_) {
+        return false;
+      }
+      if (rosFrameQueue_.size() >= rosPublisherQueueCapacity_) {
+        const std::uint64_t droppedCurrent = keyframe ? 0 : 1;
+        AdvanceROSEpochLocked(
+            xgc_camera_msgs::FrameTiming::DISCONTINUITY_QUEUE_OVERFLOW,
+            droppedCurrent);
+        if (!keyframe) {
+          forceKeyframe_.store(true);
+          rosPublisherCondition_.notify_one();
+          return false;
+        }
+      }
+      if (rosWaitingForIDR_ && !keyframe) {
+        ++rosDroppedFramesBeforeIDR_;
+        forceKeyframe_.store(true);
+        return false;
+      }
+
+      frame.epoch = streamEpoch_;
+      frame.frameSequence = nextPublishedFrameSequence_++;
+      frame.generation = rosPublisherGeneration_;
+      if (rosWaitingForIDR_) {
+        frame.discontinuity = pendingDiscontinuity_;
+        frame.droppedFramesBefore = static_cast<std::uint32_t>(
+            std::min<std::uint64_t>(
+                rosDroppedFramesBeforeIDR_,
+                std::numeric_limits<std::uint32_t>::max()));
+        rosDroppedFramesBeforeIDR_ = 0;
+        pendingDiscontinuity_ =
+            xgc_camera_msgs::FrameTiming::DISCONTINUITY_NONE;
+        rosWaitingForIDR_ = false;
+      }
+      rosFrameQueue_.push_back(std::move(frame));
+    }
+    rosPublisherCondition_.notify_one();
+    return true;
+  }
+
+  StreamInfoSnapshot StreamInfoLocked() const {
+    StreamInfoSnapshot snapshot;
+    snapshot.epoch = streamEpoch_;
+    snapshot.generation = rosPublisherGeneration_;
+    snapshot.width = streamWidth_;
+    snapshot.height = streamHeight_;
+    snapshot.frameRate = streamFrameRate_;
+    snapshot.keyframeIntervalFrames = streamKeyframeIntervalFrames_;
+    return snapshot;
+  }
+
+  void PublishStreamInfo(const StreamInfoSnapshot &snapshot) {
+    {
+      std::lock_guard<std::mutex> lock(rosPublisherMutex_);
+      if (snapshot.generation != rosPublisherGeneration_) {
+        return;
+      }
+    }
+    xgc_camera_msgs::StreamInfo message;
+    message.contract_version =
+        xgc_camera_msgs::StreamInfo::CONTRACT_VERSION_CURRENT;
+    message.stream_id = sourceID_;
+    message.frame_id = frameID_;
+    message.epoch = snapshot.epoch;
+    message.codec = xgc_camera_msgs::StreamInfo::CODEC_H264;
+    message.bitstream_format =
+        xgc_camera_msgs::StreamInfo::BITSTREAM_FORMAT_ANNEX_B;
+    message.clock_domain =
+        xgc_camera_msgs::StreamInfo::CLOCK_DOMAIN_SIMULATION;
+    message.timestamp_source =
+        xgc_camera_msgs::StreamInfo::TIMESTAMP_SOURCE_SENSOR;
+    message.timestamp_reference =
+        xgc_camera_msgs::StreamInfo::TIMESTAMP_REFERENCE_RENDER_COMPLETE;
+    message.transport_mask =
+        xgc_camera_msgs::StreamInfo::TRANSPORT_ROS_COMPRESSED_VIDEO |
+        xgc_camera_msgs::StreamInfo::TRANSPORT_RTP;
+    message.width = snapshot.width;
+    message.height = snapshot.height;
+    message.nominal_frame_rate = snapshot.frameRate;
+    message.rtp_clock_rate = kRtpClockRate;
+    message.rtp_payload_type = kH264PayloadType;
+    message.target_bitrate_bps = static_cast<std::uint32_t>(bitrate_);
+    message.maximum_bitrate_bps = static_cast<std::uint32_t>(maxBitrate_);
+    message.keyframe_interval_frames = snapshot.keyframeIntervalFrames;
+    message.publisher_queue_capacity =
+        static_cast<std::uint32_t>(rosPublisherQueueCapacity_);
+    rosStreamInfoPublisher_.publish(message);
+  }
+
+  std::int64_t HostRealtimeNanoseconds() const {
+    return static_cast<std::int64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count());
+  }
+
+  void PublishROSFrame(QueuedROSFrame frame) {
+    {
+      std::lock_guard<std::mutex> lock(rosPublisherMutex_);
+      if (frame.generation != rosPublisherGeneration_) {
+        return;
+      }
+    }
+    const std::uint64_t sourceTimeNanoseconds = static_cast<std::uint64_t>(
+        std::max<std::int64_t>(0, frame.sourceTimeNanoseconds));
+    ros::Time sourceTime;
+    sourceTime.fromNSec(sourceTimeNanoseconds);
+    const std::uint32_t encodedSize =
+        static_cast<std::uint32_t>(std::min<std::size_t>(
+            frame.annexB.size(),
+            std::numeric_limits<std::uint32_t>::max()));
+    const std::int64_t hostPublishRealtimeNanoseconds =
+        HostRealtimeNanoseconds();
+
+    foxglove_msgs::CompressedVideo video;
+    video.timestamp = sourceTime;
+    video.frame_id = frameID_;
+    video.data = std::move(frame.annexB);
+    video.format = "h264";
+    rosVideoPublisher_.publish(video);
+
+    xgc_camera_msgs::FrameTiming timing;
+    timing.source_time = sourceTime;
+    timing.source_time_valid = true;
+    timing.timestamp_reference =
+        xgc_camera_msgs::FrameTiming::TIMESTAMP_REFERENCE_RENDER_COMPLETE;
+    timing.frame_id = frameID_;
+    timing.stream_id = sourceID_;
+    timing.epoch = frame.epoch;
+    timing.frame_sequence = frame.frameSequence;
+    timing.source_sequence = frame.sourceSequence;
+    timing.rtp_timestamp = frame.rtpTimestamp;
+    timing.keyframe = frame.keyframe;
+    timing.discontinuity = frame.discontinuity;
+    timing.dropped_frames_before = frame.droppedFramesBefore;
+    timing.encoded_size_bytes = encodedSize;
+    timing.native_source_time_ns = frame.sourceTimeNanoseconds;
+    timing.host_dequeue_monotonic_ns = 0;
+    timing.host_publish_realtime_ns = hostPublishRealtimeNanoseconds;
+    timing.source_to_ros_offset_ns = 0;
+    timing.mapping_uncertainty_ns = 0;
+    rosFrameTimingPublisher_.publish(timing);
+  }
+
+  void ROSPublisherLoop() {
+    while (true) {
+      std::optional<QueuedROSFrame> frame;
+      std::optional<StreamInfoSnapshot> streamInfo;
+      {
+        std::unique_lock<std::mutex> lock(rosPublisherMutex_);
+        rosPublisherCondition_.wait(lock, [this] {
+          return rosPublisherStopping_ || rosStreamInfoPending_ ||
+                 !rosFrameQueue_.empty();
+        });
+        if (rosPublisherStopping_) {
+          return;
+        }
+        if (rosStreamInfoPending_) {
+          streamInfo = StreamInfoLocked();
+          rosStreamInfoPending_ = false;
+        } else {
+          frame = std::move(rosFrameQueue_.front());
+          rosFrameQueue_.pop_front();
+        }
+      }
+      if (streamInfo) {
+        PublishStreamInfo(*streamInfo);
+      } else if (frame) {
+        PublishROSFrame(std::move(*frame));
+      }
+    }
+  }
 
   // NVENC exposes an encoded access unit all at once. Sending all of its RTP
   // fragments synchronously from the render callback creates a microburst:
@@ -701,6 +1199,8 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
           << ",\"height\":" << sensor_->ImageHeight()
           << ",\"fps\":" << sensor_->UpdateRate()
           << ",\"frameId\":\"" << EscapeJSON(frameID_)
+          << "\",\"timestampClockDomain\":\""
+          << kSourceTimestampClockDomain
           << "\",\"capabilities\":[\"set-active\",\"request-keyframe\",\"snapshot\"]}\n";
     const std::string encoded = reply.str();
     SendAll(client, encoded.data(), encoded.size());
@@ -772,6 +1272,8 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
            // clock Unix time. The media edge preserves that clock domain for
            // time matching ROS marker observations during calibration.
            << "\",\"timestampNanoseconds\":" << response.timestampNanoseconds
+           << ",\"timestampClockDomain\":\""
+           << kSourceTimestampClockDomain << "\""
            << ",\"width\":" << response.width
            << ",\"height\":" << response.height
            << ",\"pixelFormat\":\"rgb8\""
@@ -791,7 +1293,21 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
       }
       header << response.distortion[index];
     }
-    header << "]}\n";
+    header << ']';
+    if (response.renderPoseValid) {
+      header << ",\"renderPose\":{\"position\":{\"x\":"
+             << response.renderPosition[0] << ",\"y\":"
+             << response.renderPosition[1] << ",\"z\":"
+             << response.renderPosition[2]
+             << "},\"orientation\":{\"x\":"
+             << response.renderOrientation[0] << ",\"y\":"
+             << response.renderOrientation[1] << ",\"z\":"
+             << response.renderOrientation[2] << ",\"w\":"
+             << response.renderOrientation[3] << "}}"
+             << ",\"poseFrameId\":\""
+             << EscapeJSON(response.poseFrameID) << '"';
+    }
+    header << "}\n";
     const std::string encodedHeader = header.str();
     if (!SendAll(client, encodedHeader.data(), encodedHeader.size()) ||
         !SendAll(client, response.jpeg.data(), response.jpeg.size()) ||
@@ -809,10 +1325,12 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     if (stopping_.load() || !sensor_) {
       return;
     }
+    const bool shouldEncode =
+        desiredActive_.load() || rosConsumersActive_.load();
     if (!camera_) {
       camera_ = sensor_->Camera();
       if (!camera_) {
-        if (desiredActive_.load() || SnapshotPending()) {
+        if (shouldEncode || SnapshotPending()) {
           sensor_->SetActive(true);
         }
         return;
@@ -821,7 +1339,7 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     if (!AttachRenderTargetListener()) {
       return;
     }
-    const bool shouldRender = desiredActive_.load() || SnapshotPending();
+    const bool shouldRender = shouldEncode || SnapshotPending();
     if (shouldRender) {
       if (!sensor_->IsActive()) {
         sensor_->SetActive(true);
@@ -863,17 +1381,23 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     if (stopping_.load()) {
       return;
     }
-    if (cleanupEncoderRequested_.exchange(false) && !desiredActive_.load() && !SnapshotPending()) {
+    const bool shouldEncode =
+        desiredActive_.load() || rosConsumersActive_.load();
+    if (cleanupEncoderRequested_.exchange(false) && !shouldEncode &&
+        !SnapshotPending()) {
       DestroyEncoder();
       return;
     }
-    if (!desiredActive_.load() && !SnapshotPending()) {
+    if (!shouldEncode && !SnapshotPending()) {
       return;
     }
     if (SnapshotPending()) {
       CaptureSnapshot();
     }
-    if (!desiredActive_.load()) {
+    if (!shouldEncode) {
+      return;
+    }
+    if (!ROSRenderIsFreshForCurrentActivation()) {
       return;
     }
     if (!EncodeRenderedFrame()) {
@@ -931,6 +1455,27 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
                            0.0, focalLength, (static_cast<double>(height) - 1.0) / 2.0,
                            0.0, 0.0, 1.0};
     result.distortion.fill(0.0);
+    // Gazebo renders along the camera-link +X axis, while the public ROS frame
+    // follows REP-103 optical coordinates (Z forward, X right, Y down). Record
+    // the pose of that exact optical frame at this render callback, not the
+    // model's launch pose, so movable-camera snapshots remain reproducible.
+    const ignition::math::Pose3d renderCameraPose = camera_->WorldPose();
+    const ignition::math::Quaterniond linkToOptical(
+        -1.5707963267948966, 0.0, -1.5707963267948966);
+    ignition::math::Quaterniond opticalRotation =
+        renderCameraPose.Rot() * linkToOptical;
+    opticalRotation.Normalize();
+    result.renderPosition = {
+        renderCameraPose.Pos().X(),
+        renderCameraPose.Pos().Y(),
+        renderCameraPose.Pos().Z()};
+    result.renderOrientation = {
+        opticalRotation.X(),
+        opticalRotation.Y(),
+        opticalRotation.Z(),
+        opticalRotation.W()};
+    result.poseFrameID = snapshotPoseFrameID_;
+    result.renderPoseValid = true;
     const common::Time measurementTime = sensor_->LastMeasurementTime();
     result.timestampNanoseconds = static_cast<std::int64_t>(measurementTime.sec) * 1'000'000'000LL + measurementTime.nsec;
     {
@@ -989,6 +1534,64 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     return result;
   }
 
+  std::int64_t SourceTimeNanoseconds() const {
+    const common::Time measurementTime = sensor_->LastMeasurementTime();
+    return static_cast<std::int64_t>(measurementTime.sec) *
+               1'000'000'000LL +
+           static_cast<std::int64_t>(measurementTime.nsec);
+  }
+
+  bool ROSRenderIsFreshForCurrentActivation() {
+    const std::int64_t sourceTimeNanoseconds = SourceTimeNanoseconds();
+    const auto decision = rosFreshRenderGate_.Observe(
+        rosFreshRenderGeneration_.load(), sourceTimeNanoseconds);
+    if (decision ==
+        gazebo_sim_camera::FreshRenderDecision::kDiscardAndReset) {
+      // The first callback after CameraSensor activation may still expose the
+      // dormant texture. It must not feed either NVENC's delayed-output state
+      // or the new ROS epoch, even when its stale AU happens to be an IDR.
+      ClearRTPQueue();
+      DestroyEncoder();
+      forceKeyframe_.store(true);
+      return false;
+    }
+    return decision == gazebo_sim_camera::FreshRenderDecision::kAccept;
+  }
+
+  void ObserveSourceTime(std::int64_t sourceTimeNanoseconds) {
+    if (lastSourceTimeNanoseconds_ &&
+        sourceTimeNanoseconds < *lastSourceTimeNanoseconds_) {
+      ClearRTPQueue();
+      BeginROSEpoch(
+          xgc_camera_msgs::FrameTiming::
+              DISCONTINUITY_SOURCE_TIME_RESET);
+      forceKeyframe_.store(true);
+      LogEncoderError(
+          "simulation time moved backwards; starting a new stream epoch");
+      // A delayed NVENC output still belongs to the previous simulation
+      // timeline. Recreating the encoder is the only safe way to guarantee
+      // that it cannot later be paired with metadata from the new epoch.
+      DestroyEncoder();
+    }
+    lastSourceTimeNanoseconds_ = sourceTimeNanoseconds;
+  }
+
+  std::optional<PendingEncodedFrame> TakePendingEncodedFrame(
+      std::uint64_t encoderTimestamp) {
+    const auto found = std::find_if(
+        pendingEncodedFrames_.begin(),
+        pendingEncodedFrames_.end(),
+        [encoderTimestamp](const PendingEncodedFrame &pending) {
+          return pending.encoderTimestamp == encoderTimestamp;
+        });
+    if (found != pendingEncodedFrames_.end()) {
+      PendingEncodedFrame result = *found;
+      pendingEncodedFrames_.erase(found);
+      return result;
+    }
+    return std::nullopt;
+  }
+
   bool EncodeRenderedFrame() {
     if (!camera_ || !camera_->RenderTexture()) {
       return false;
@@ -1000,6 +1603,8 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     }
     const unsigned int width = camera_->ImageWidth();
     const unsigned int height = camera_->ImageHeight();
+    const std::int64_t sourceTimeNanoseconds = SourceTimeNanoseconds();
+    ObserveSourceTime(sourceTimeNanoseconds);
     if (!EnsureEncoder(width, height)) {
       return false;
     }
@@ -1031,6 +1636,11 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     picture.inputDuration = std::max<std::uint64_t>(
         1, static_cast<std::uint64_t>(
                std::llround(static_cast<double>(kRtpClockRate) / fps)));
+    PendingEncodedFrame pending;
+    pending.encoderTimestamp = inputTimestamp;
+    pending.sourceTimeNanoseconds = sourceTimeNanoseconds;
+    pending.sourceSequence = sourceFrameSequence_++;
+    pendingEncodedFrames_.push_back(pending);
     if (forceKeyframe) {
       picture.encodePicFlags = NV_ENC_PIC_FLAG_FORCEIDR | NV_ENC_PIC_FLAG_OUTPUT_SPSPPS;
     }
@@ -1038,9 +1648,15 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     if (encodeStatus != NV_ENC_SUCCESS && encodeStatus != NV_ENC_ERR_NEED_MORE_INPUT) {
       api_.nvEncUnmapInputResource(encoder_, mapping.mappedResource);
       LogEncoderError("NVENC could not encode the OpenGL frame");
+      ClearRTPQueue();
+      BeginROSEpoch(
+          xgc_camera_msgs::FrameTiming::DISCONTINUITY_ENCODER_RESET);
+      forceKeyframe_.store(true);
+      DestroyEncoder();
       return false;
     }
     bool sent = true;
+    bool recreateEncoder = false;
     if (encodeStatus == NV_ENC_SUCCESS) {
       NV_ENC_LOCK_BITSTREAM locked{};
       locked.version = NV_ENC_LOCK_BITSTREAM_VER;
@@ -1048,15 +1664,53 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
       if (api_.nvEncLockBitstream(encoder_, &locked) != NV_ENC_SUCCESS) {
         sent = false;
         LogEncoderError("NVENC could not lock the H264 bitstream");
+        ClearRTPQueue();
+        BeginROSEpoch(
+            xgc_camera_msgs::FrameTiming::DISCONTINUITY_ENCODER_RESET);
+        forceKeyframe_.store(true);
+        recreateEncoder = true;
       } else {
-        sent = SendH264AccessUnit(
-            static_cast<const std::uint8_t *>(locked.bitstreamBufferPtr),
-            locked.bitstreamSizeInBytes,
-            static_cast<std::uint32_t>(locked.outputTimeStamp));
+        const auto encodedMetadata =
+            TakePendingEncodedFrame(locked.outputTimeStamp);
+        if (!encodedMetadata) {
+          sent = false;
+          LogEncoderError(
+              "NVENC output timestamp has no source-frame timing metadata");
+          ClearRTPQueue();
+          BeginROSEpoch(
+              xgc_camera_msgs::FrameTiming::
+                  DISCONTINUITY_ENCODER_RESET);
+          forceKeyframe_.store(true);
+          recreateEncoder = true;
+        } else {
+          sent = SendH264AccessUnit(
+              static_cast<const std::uint8_t *>(locked.bitstreamBufferPtr),
+              locked.bitstreamSizeInBytes,
+              static_cast<std::uint32_t>(locked.outputTimeStamp),
+              *encodedMetadata);
+        }
         api_.nvEncUnlockBitstream(encoder_, bitstream_);
       }
+    } else if (pendingEncodedFrames_.size() >
+               kMaximumPendingEncodedFrames) {
+      // This source is deliberately configured without B-frames, lookahead,
+      // or asynchronous encode. A bounded grace window tolerates a transient
+      // delayed output, but an unbounded metadata queue would eventually make
+      // source-time pairing ambiguous and reuse a still-in-flight GL surface.
+      sent = false;
+      LogEncoderError(
+          "NVENC retained too many delayed frames; rebuilding the encoder");
+      ClearRTPQueue();
+      BeginROSEpoch(
+          xgc_camera_msgs::FrameTiming::DISCONTINUITY_ENCODER_RESET);
+      forceKeyframe_.store(true);
+      recreateEncoder = true;
     }
     api_.nvEncUnmapInputResource(encoder_, mapping.mappedResource);
+    if (recreateEncoder) {
+      DestroyEncoder();
+      return false;
+    }
     ++encodedFrameIndex_;
     return sent;
   }
@@ -1182,6 +1836,23 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     encoderWidth_ = width;
     encoderHeight_ = height;
     encodedFrameIndex_ = 0;
+    pendingEncodedFrames_.clear();
+    const bool epochAlreadyPending = ROSHasPendingEpoch();
+    if (encoderEverInitialized_ && !epochAlreadyPending) {
+      ClearRTPQueue();
+      BeginROSEpoch(
+          xgc_camera_msgs::FrameTiming::DISCONTINUITY_ENCODER_RESET);
+    }
+    encoderEverInitialized_ = true;
+    {
+      std::lock_guard<std::mutex> lock(rosPublisherMutex_);
+      streamWidth_ = width;
+      streamHeight_ = height;
+      streamFrameRate_ = fps;
+      streamKeyframeIntervalFrames_ = configuration.gopLength;
+      rosStreamInfoPending_ = rosPublishingEnabled_;
+    }
+    rosPublisherCondition_.notify_one();
     forceKeyframe_.store(true);
     encoderResourcesActive_.store(true);
     return true;
@@ -1271,6 +1942,8 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     }
     encoderWidth_ = 0;
     encoderHeight_ = 0;
+    pendingEncodedFrames_.clear();
+    lastSourceTimeNanoseconds_.reset();
     encoderResourcesActive_.store(false);
     DestroyConversionTexture();
   }
@@ -1292,8 +1965,12 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     encoderTextureHeight_ = 0;
   }
 
-  bool SendH264AccessUnit(const std::uint8_t *data, std::size_t size, std::uint32_t timestamp) {
-    if (!data || size == 0 || rtpSocket_ < 0) {
+  bool SendH264AccessUnit(
+      const std::uint8_t *data,
+      std::size_t size,
+      std::uint32_t timestamp,
+      const PendingEncodedFrame &metadata) {
+    if (!data || size == 0) {
       return false;
     }
     const auto nalUnits = SplitAnnexB(data, size);
@@ -1301,14 +1978,21 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
       LogEncoderError("NVENC produced a non-Annex-B H264 access unit");
       return false;
     }
+    const bool keyframe = std::any_of(
+        nalUnits.begin(), nalUnits.end(), [](const auto &nal) {
+          return !nal.empty() && (nal.front() & 0x1f) == 5;
+        });
+    EnqueueROSAccessUnit(data, size, timestamp, keyframe, metadata);
+    if (!desiredActive_.load() || rtpSocket_ < 0) {
+      return true;
+    }
+
     std::vector<QueuedRTPPacket> packets;
-    bool keyframe = false;
     for (std::size_t index = 0; index < nalUnits.size(); ++index) {
       const auto &nal = nalUnits[index];
       if (nal.empty()) {
         continue;
       }
-      keyframe = keyframe || (nal.front() & 0x1f) == 5;
       const bool lastNAL = index + 1 == nalUnits.size();
       if (nal.size() <= kMaximumRtpPayloadBytes) {
         if (!AppendRTPPacket(packets, nal.data(), nal.size(), timestamp, lastNAL)) {
@@ -1359,14 +2043,72 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     return true;
   }
 
-  void LogEncoderError(const std::string &message) {
-    std::lock_guard<std::mutex> lock(encoderLogMutex_);
-    const auto now = std::chrono::steady_clock::now();
-    if (message != lastEncoderError_ || now - lastEncoderErrorAt_ > std::chrono::seconds(5)) {
-      gzwarn << "xgc_media_camera: " << message << "\n";
-      lastEncoderError_ = message;
-      lastEncoderErrorAt_ = now;
+  bool StartDiagnosticReporter() {
+    try {
+      diagnosticStopping_ = false;
+      diagnosticThread_ =
+          std::thread(&XGCMediaCameraPlugin::DiagnosticReporterLoop, this);
+      return true;
+    } catch (const std::system_error &error) {
+      gzerr << "xgc_media_camera could not start diagnostic reporter: "
+            << error.what() << "\n";
+      return false;
     }
+  }
+
+  void StopDiagnosticReporter() {
+    {
+      std::lock_guard<std::mutex> lock(diagnosticMutex_);
+      diagnosticStopping_ = true;
+      pendingDiagnostics_.clear();
+    }
+    diagnosticCondition_.notify_all();
+    if (diagnosticThread_.joinable()) {
+      diagnosticThread_.join();
+    }
+  }
+
+  void DiagnosticReporterLoop() {
+    while (true) {
+      std::string message;
+      {
+        std::unique_lock<std::mutex> lock(diagnosticMutex_);
+        diagnosticCondition_.wait(lock, [this] {
+          return diagnosticStopping_ || !pendingDiagnostics_.empty();
+        });
+        if (diagnosticStopping_) {
+          return;
+        }
+        message = std::move(pendingDiagnostics_.front());
+        pendingDiagnostics_.pop_front();
+      }
+      const auto now = std::chrono::steady_clock::now();
+      if (message != lastEncoderError_ ||
+          now - lastEncoderErrorAt_ > std::chrono::seconds(5)) {
+        // Gazebo console output can acquire global logging locks and perform
+        // file I/O, so it is confined to this worker and never executed in
+        // Ogre::RenderTargetListener.
+        gzwarn << "xgc_media_camera: " << message << "\n";
+        lastEncoderError_ = message;
+        lastEncoderErrorAt_ = now;
+      }
+    }
+  }
+
+  void LogEncoderError(const std::string &message) {
+    // This method is called from both worker threads and the render callback.
+    // A contended diagnostics lock must never stall Gazebo rendering.
+    std::unique_lock<std::mutex> lock(
+        diagnosticMutex_, std::try_to_lock);
+    if (!lock.owns_lock() || diagnosticStopping_) {
+      return;
+    }
+    if (pendingDiagnostics_.size() >= kMaximumPendingDiagnostics) {
+      pendingDiagnostics_.pop_front();
+    }
+    pendingDiagnostics_.push_back(message);
+    lock.unlock();
+    diagnosticCondition_.notify_one();
   }
 
   sensors::CameraSensorPtr sensor_;
@@ -1376,6 +2118,7 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
 
   std::string sourceID_;
   std::string frameID_;
+  std::string snapshotPoseFrameID_;
   std::string rtpHost_;
   int rtpPort_ = 0;
   std::string controlSocketPath_;
@@ -1384,12 +2127,20 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
   int pacingBitrate_ = 0;
   int vbvBufferMilliseconds_ = 500;
   int jpegQuality_ = 90;
+  bool rosPublishingEnabled_ = true;
+  std::string rosVideoTopic_;
+  std::string rosFrameTimingTopic_;
+  std::string rosStreamInfoTopic_;
+  std::size_t rosPublisherQueueCapacity_ =
+      kDefaultROSPublisherQueueCapacity;
 
   std::atomic<bool> stopping_{false};
   std::atomic<bool> desiredActive_{false};
   std::atomic<bool> forceKeyframe_{true};
   std::atomic<bool> cleanupEncoderRequested_{false};
   std::atomic<bool> encoderResourcesActive_{false};
+  std::atomic<std::uint64_t> rosFreshRenderGeneration_{0};
+  gazebo_sim_camera::FreshRenderGate rosFreshRenderGate_;
   int controlListener_ = -1;
   std::thread controlThread_;
   std::mutex snapshotTransactionMutex_;
@@ -1409,6 +2160,32 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
   std::size_t rtpQueuedBytes_ = 0;
   std::uint64_t rtpQueueGeneration_ = 0;
 
+  std::unique_ptr<ros::NodeHandle> rosNode_;
+  ros::Publisher rosVideoPublisher_;
+  ros::Publisher rosFrameTimingPublisher_;
+  ros::Publisher rosStreamInfoPublisher_;
+  std::atomic<bool> rosConsumersActive_{false};
+  std::mutex rosConsumerMutex_;
+  bool rosSubscriberCallbacksEnabled_ = false;
+  std::size_t rosSubscriberConnectionCount_ = 0;
+  mutable std::mutex rosPublisherMutex_;
+  std::condition_variable rosPublisherCondition_;
+  std::deque<QueuedROSFrame> rosFrameQueue_;
+  std::thread rosPublisherThread_;
+  bool rosPublisherStopping_ = false;
+  bool rosStreamInfoPending_ = false;
+  bool rosWaitingForIDR_ = true;
+  std::uint64_t rosDroppedFramesBeforeIDR_ = 0;
+  std::uint64_t rosPublisherGeneration_ = 0;
+  std::uint64_t streamEpoch_ = 1;
+  std::uint64_t nextPublishedFrameSequence_ = 0;
+  std::uint8_t pendingDiscontinuity_ =
+      xgc_camera_msgs::FrameTiming::DISCONTINUITY_STREAM_START;
+  unsigned int streamWidth_ = 0;
+  unsigned int streamHeight_ = 0;
+  double streamFrameRate_ = 0.0;
+  std::uint32_t streamKeyframeIntervalFrames_ = 0;
+
   void *nvencLibrary_ = nullptr;
   NV_ENCODE_API_FUNCTION_LIST api_{};
   void *encoder_ = nullptr;
@@ -1422,9 +2199,17 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
   unsigned int encoderWidth_ = 0;
   unsigned int encoderHeight_ = 0;
   std::uint64_t encodedFrameIndex_ = 0;
+  std::uint64_t sourceFrameSequence_ = 0;
+  std::deque<PendingEncodedFrame> pendingEncodedFrames_;
+  std::optional<std::int64_t> lastSourceTimeNanoseconds_;
+  bool encoderEverInitialized_ = false;
   bool glewInitialized_ = false;
 
-  std::mutex encoderLogMutex_;
+  std::mutex diagnosticMutex_;
+  std::condition_variable diagnosticCondition_;
+  std::deque<std::string> pendingDiagnostics_;
+  std::thread diagnosticThread_;
+  bool diagnosticStopping_ = true;
   std::string lastEncoderError_;
   std::chrono::steady_clock::time_point lastEncoderErrorAt_{};
 };

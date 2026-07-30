@@ -17,6 +17,12 @@
   <arg name="media_source_id" default="usb_cam"/>
   <arg name="media_rtp_port" default="5004"/>
   <arg name="media_control_socket" default="/tmp/xgc2/media/usb_cam.sock"/>
+  <arg name="publish_encoded_video" default="true"/>
+  <arg name="encoded_video_topic" default="/xgc/camera/world/video_h264"/>
+  <arg name="frame_timing_topic" default="/xgc/camera/world/frame_timing"/>
+  <arg name="stream_info_topic" default="/xgc/camera/world/stream_info"/>
+  <arg name="encoded_publisher_queue_capacity" default="8"/>
+  <arg name="enable_continuous_jpeg_preview" default="false"/>
   <arg name="media_bitrate" default="profile"/>
   <arg name="media_max_bitrate" default="profile"/>
   <arg name="media_pacing_bitrate" default="profile"/>
@@ -47,6 +53,14 @@
     <arg name="media_source_id" value="$(arg media_source_id)"/>
     <arg name="media_rtp_port" value="$(arg media_rtp_port)"/>
     <arg name="media_control_socket" value="$(arg media_control_socket)"/>
+    <arg name="publish_encoded_video" value="$(arg publish_encoded_video)"/>
+    <arg name="encoded_video_topic" value="$(arg encoded_video_topic)"/>
+    <arg name="frame_timing_topic" value="$(arg frame_timing_topic)"/>
+    <arg name="stream_info_topic" value="$(arg stream_info_topic)"/>
+    <arg name="encoded_publisher_queue_capacity"
+         value="$(arg encoded_publisher_queue_capacity)"/>
+    <arg name="enable_continuous_jpeg_preview"
+         value="$(arg enable_continuous_jpeg_preview)"/>
     <arg name="media_bitrate" value="$(arg media_bitrate)"/>
     <arg name="media_max_bitrate" value="$(arg media_max_bitrate)"/>
     <arg name="media_pacing_bitrate" value="$(arg media_pacing_bitrate)"/>

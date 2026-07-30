@@ -68,10 +68,12 @@ docker run --rm \
       build-essential cmake dpkg-dev fakeroot git libffmpeg-nvenc-dev libgl1-mesa-dev \
       libglew-dev libjpeg-dev libxml2-utils python3-numpy python3-opencv python3-yaml \
       rsync xauth xvfb ros-noetic-camera-calibration \
+      ros-noetic-foxglove-msgs \
       ros-noetic-gazebo-dev \
       ros-noetic-gazebo-plugins ros-noetic-gazebo-ros ros-noetic-rostest \
       ros-noetic-rospack ros-noetic-rospy ros-noetic-roslaunch ros-noetic-rostopic ros-noetic-rviz \
-      ros-noetic-sensor-msgs ros-noetic-tf ros-noetic-xacro \
+      ros-noetic-roscpp ros-noetic-sensor-msgs ros-noetic-tf ros-noetic-xacro \
+      ros-noetic-xgc2-camera-msgs \
       ros-noetic-xgc2-gazebo-sim-worlds
     rm -rf /workspace/work/src /workspace/work/build /workspace/work/devel /workspace/work/install-root
     mkdir -p /workspace/work/src/gazebo-camera

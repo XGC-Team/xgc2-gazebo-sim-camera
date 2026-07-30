@@ -16,6 +16,7 @@ required=(
   .xgc2/scripts/check_gazebo_shutdown.sh
   .xgc2/scripts/check_package_compliance.sh .xgc2/scripts/package_debs.sh
   CMakeLists.txt LICENSE README.md package.xml
+  docs/encoded_camera_recording.md
   launch/static_camera.launch launch/intrinsic_calibration_world.launch
   launch/extrinsic_calibration_world.launch launch/camera_ar_rviz.launch
   launch/web_calibration.launch web/index.html web/app.js web/style.css
@@ -37,7 +38,9 @@ grep -q 'PLUGIN="${PREFIX}/lib/libxgc_gazebo_media_camera.so"' .xgc2/scripts/pac
 grep -q '<name>gazebo_sim_camera</name>' package.xml
 grep -q '<exec_depend>python3-yaml</exec_depend>' package.xml
 grep -q '<exec_depend>rospy</exec_depend>' package.xml
-grep -q '^Depends: libgl1, libglew2.1, libjpeg8, python3-numpy, python3-opencv, python3-yaml, ros-noetic-camera-calibration,' .xgc2/scripts/package_debs.sh
+grep -q '<depend>foxglove_msgs</depend>' package.xml
+grep -q '<depend>xgc_camera_msgs</depend>' package.xml
+grep -q '^Depends: libgl1, libglew2.1, libjpeg8, python3-numpy, python3-opencv, python3-yaml, ros-noetic-camera-calibration, ros-noetic-foxglove-msgs,' .xgc2/scripts/package_debs.sh
 grep -q '^  recommends:$' .xgc2/product.yml
 grep -q '^Recommends: ros-noetic-xgc2-gazebo-sim-vrpn-bridge' .xgc2/scripts/package_debs.sh
 

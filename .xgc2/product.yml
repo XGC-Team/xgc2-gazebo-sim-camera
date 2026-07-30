@@ -30,6 +30,8 @@ apt:
   - ros-noetic-gazebo-msgs
   - ros-noetic-gazebo-plugins
   - ros-noetic-gazebo-ros
+  - ros-noetic-foxglove-msgs
+  - ros-noetic-roscpp
   - ros-noetic-rospy
   - ros-noetic-roslaunch
   - ros-noetic-rostopic
@@ -37,6 +39,7 @@ apt:
   - ros-noetic-sensor-msgs
   - ros-noetic-tf
   - ros-noetic-xacro
+  - ros-noetic-xgc2-camera-msgs
   - ros-noetic-xgc2-gazebo-sim-worlds (>= 1.1.0-14)
   recommends:
   - ros-noetic-xgc2-gazebo-sim-vrpn-bridge (>= 1.1.0-13)
@@ -70,9 +73,11 @@ ownership:
   - /opt/ros/noetic/lib/libxgc_gazebo_media_camera.so
 release:
   requires:
+  - xgc2-ros-msgs
   - xgc2-gazebo-sim-scenes
   - xgc2-gazebo-sim-vrpn-bridge
   dependency_policy:
+    xgc2-ros-msgs: rebuild
     xgc2-gazebo-sim-vrpn-bridge: verify
     xgc2-gazebo-sim-scenes: verify
   repository: lxk36/xgc2-gazebo-sim-camera

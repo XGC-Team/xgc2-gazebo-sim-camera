@@ -12,6 +12,9 @@
   <build_depend>libjpeg-dev</build_depend>
   <build_depend>libgl1-mesa-dev</build_depend>
   <build_depend>libglew-dev</build_depend>
+  <depend>foxglove_msgs</depend>
+  <depend>roscpp</depend>
+  <depend>xgc_camera_msgs</depend>
   <exec_depend>gazebo_msgs</exec_depend>
   <exec_depend>gazebo_ros</exec_depend>
   <exec_depend>rospy</exec_depend>

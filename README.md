@@ -6,20 +6,31 @@ and does not modify FS150, Scout, UAV, or other onboard camera definitions.
 
 ## Media contract
 
-The managed camera path is:
+The managed camera path performs one source encode:
 
 ```text
-Gazebo render texture -> OpenGL texture -> NVENC H264 -> loopback RTP
-  -> XGC media edge -> WebRTC -> WebUI
+Gazebo render texture -> OpenGL texture -> NVENC H264 Annex-B
+  |-> loopback RTP -> XGC media edge -> WebRTC -> WebUI
+  `-> asynchronous ROS publisher -> source-quality recording
 ```
 
-The live WebUI path does not publish raw or JPEG video through ROS. The camera
+The plugin publishes each complete encoded access unit as
+`foxglove_msgs/CompressedVideo`, with `xgc_camera_msgs/FrameTiming` and a
+latched `xgc_camera_msgs/StreamInfo`. This reuses the NVENC output; it does not
+render or encode a second copy. The exact Gazebo sensor measurement time is
+preserved for every frame. See
+[`docs/encoded_camera_recording.md`](docs/encoded_camera_recording.md) for
+topics, rosbag commands, epoch semantics, and replay guidance.
+
+The live WebUI path does not publish raw or periodic JPEG video through ROS. The camera
 plugin exposes a private Unix control socket under `/tmp/xgc2/media/`; the media
 edge activates the sensor only while a consumer needs live video. An explicit
 snapshot request renders one frame and returns its JPEG, RGB pixels, source
 timestamp, pinhole camera matrix, and zero-distortion vector for calibration.
-ROS image delivery is an optional downstream branch and is not owned by this
-package.
+The older ROS JPEG preview topic is compatibility-only and its continuous
+snapshot timer is disabled by default; set
+`enable_continuous_jpeg_preview:=true` only for a consumer that still requires
+it.
 
 The default instance uses:
 

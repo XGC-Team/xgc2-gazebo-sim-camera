@@ -16,6 +16,12 @@
   <xacro:arg name="media_rtp_host" default="127.0.0.1"/>
   <xacro:arg name="media_rtp_port" default="5004"/>
   <xacro:arg name="media_control_socket" default="/tmp/xgc2/media/usb_cam.sock"/>
+  <xacro:arg name="snapshot_pose_frame_id" default="world"/>
+  <xacro:arg name="publish_encoded_video" default="true"/>
+  <xacro:arg name="encoded_video_topic" default="/xgc/camera/world/video_h264"/>
+  <xacro:arg name="frame_timing_topic" default="/xgc/camera/world/frame_timing"/>
+  <xacro:arg name="stream_info_topic" default="/xgc/camera/world/stream_info"/>
+  <xacro:arg name="encoded_publisher_queue_capacity" default="8"/>
   <!--
     "profile" means use the selected atomic parameter group. These legacy
     launch overrides remain available for direct roslaunch callers and tests,
@@ -148,6 +154,12 @@
         <rtpHost>$(arg media_rtp_host)</rtpHost>
         <rtpPort>$(arg media_rtp_port)</rtpPort>
         <controlSocket>$(arg media_control_socket)</controlSocket>
+        <snapshotPoseFrameId>$(arg snapshot_pose_frame_id)</snapshotPoseFrameId>
+        <rosPublishEnabled>$(arg publish_encoded_video)</rosPublishEnabled>
+        <rosVideoTopic>$(arg encoded_video_topic)</rosVideoTopic>
+        <rosFrameTimingTopic>$(arg frame_timing_topic)</rosFrameTimingTopic>
+        <rosStreamInfoTopic>$(arg stream_info_topic)</rosStreamInfoTopic>
+        <rosPublisherQueueCapacity>$(arg encoded_publisher_queue_capacity)</rosPublisherQueueCapacity>
         <bitrate>${camera_media_bitrate}</bitrate>
         <maxBitrate>${camera_media_max_bitrate}</maxBitrate>
         <pacingBitrate>${camera_media_pacing_bitrate}</pacingBitrate>

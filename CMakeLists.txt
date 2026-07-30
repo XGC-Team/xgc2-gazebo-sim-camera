@@ -1,7 +1,11 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(gazebo_sim_camera)
 
-find_package(catkin REQUIRED)
+find_package(catkin REQUIRED COMPONENTS
+  foxglove_msgs
+  roscpp
+  xgc_camera_msgs
+)
 find_package(gazebo REQUIRED)
 find_package(GLEW REQUIRED)
 find_package(JPEG REQUIRED)
@@ -9,12 +13,14 @@ find_package(OpenGL REQUIRED)
 
 catkin_package(
   LIBRARIES xgc_gazebo_media_camera
+  CATKIN_DEPENDS foxglove_msgs roscpp xgc_camera_msgs
 )
 
 add_library(xgc_gazebo_media_camera SHARED
   src/xgc_media_camera_plugin.cpp
 )
 target_compile_features(xgc_gazebo_media_camera PRIVATE cxx_std_17)
+add_dependencies(xgc_gazebo_media_camera ${catkin_EXPORTED_TARGETS})
 target_include_directories(xgc_gazebo_media_camera PRIVATE
   ${catkin_INCLUDE_DIRS}
   ${GAZEBO_INCLUDE_DIRS}
@@ -45,6 +51,7 @@ catkin_install_python(PROGRAMS
 
 install(DIRECTORY
   config
+  docs
   launch
   rviz
   src
@@ -57,6 +64,15 @@ install(DIRECTORY
 
 if(CATKIN_ENABLE_TESTING)
   find_package(rostest REQUIRED)
+  catkin_add_gtest(test_fresh_render_gate
+    test/test_fresh_render_gate.cpp
+  )
+  if(TARGET test_fresh_render_gate)
+    target_compile_features(test_fresh_render_gate PRIVATE cxx_std_17)
+    target_include_directories(test_fresh_render_gate PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+  endif()
   catkin_add_nosetests(test/test_intrinsic_sweep.py)
   catkin_add_nosetests(test/test_keyboard_camera_teleop.py)
   catkin_add_nosetests(test/test_web_calibration.py)
