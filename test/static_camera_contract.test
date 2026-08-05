@@ -32,5 +32,7 @@
     <param name="video_topic" value="/xgc/test/camera/video_h264"/>
     <param name="frame_timing_topic" value="/xgc/test/camera/frame_timing"/>
     <param name="camera_info_topic" value="/xgc/camera/world/camera_info"/>
+    <!-- GPU-backed validation overrides this to exercise live encoded frames. -->
+    <param name="expect_encoded_frames" value="false"/>
   </test>
 </launch>
