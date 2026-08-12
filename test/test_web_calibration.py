@@ -83,7 +83,14 @@ class RecommendedViewsTest(unittest.TestCase):
 class WebDirTest(unittest.TestCase):
     def test_resolve_web_dir_finds_source_assets(self):
         webdir = Path(MODULE.resolve_web_dir())
-        self.assertTrue((webdir / "index.html").is_file())
+        index = (webdir / "index.html").read_text(encoding="utf-8")
+        app = (webdir / "app.js").read_text(encoding="utf-8")
+        styles = (webdir / "style.css").read_text(encoding="utf-8")
+        self.assertIn('type="module"', index)
+        self.assertIn('src="/app.js"', index)
+        self.assertIn("xgc-app-shell", app)
+        self.assertIn("/state", app)
+        self.assertIn(".xgc-topbar", styles)
 
 
 if __name__ == "__main__":

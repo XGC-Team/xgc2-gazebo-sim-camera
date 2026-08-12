@@ -5,5 +5,8 @@
 /.work/
 /.ci/
 /debs/
+web-src/node_modules/
+web-src/dist/
+web-src/*.tsbuildinfo
 *.pyc
 __pycache__/

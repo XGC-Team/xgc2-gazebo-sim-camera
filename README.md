@@ -184,6 +184,8 @@ not install files under `/usr/share/xgc2/process-definitions`.
 ## Test and package
 
 ```bash
+npm --prefix web-src ci
+npm --prefix web-src run build
 source /opt/ros/noetic/setup.bash
 python3 test/test_world_camera_profiles.py
 python3 test/static_product_contract.py
@@ -192,6 +194,13 @@ python3 test/static_product_contract.py
 catkin_make run_tests_gazebo_sim_camera
 catkin_test_results
 ```
+
+The packaged calibration page is a deterministic React build consuming the
+immutable `@xgc2/ui-react` `0.11.0` release for its shell, single-title topbar,
+themes, panels, controls, feedback, progress, code results, responsive layout,
+and scrollbars. Gazebo transport and the interactive sample-guide canvas remain
+product-specific. CI and release jobs rebuild `web/app.js` and `web/style.css`
+and reject source/generated drift.
 
 The profile unit test validates schema bounds and expands every named profile
 through xacro. While the source is inactive, the Gazebo contract first calls

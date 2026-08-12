@@ -3,56 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Camera Calibration</title>
+  <title>XGC2 Gazebo Camera Calibration</title>
   <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
 </head>
 <body>
-  <header>
-    <h1>Camera Calibration</h1>
-    <span id="conn" class="pill pill-off">connecting…</span>
-  </header>
-
-  <main>
-    <section class="video">
-      <div class="frame"><img id="stream" src="/stream.mjpg" alt="camera stream"></div>
-      <p class="hint">Live camera view. In simulation, <b>click a sphere</b> in the guide to move the camera
-        there, or press <b>Auto-run</b> to sweep every pose and validate the calibration.</p>
-    </section>
-
-    <aside class="panel">
-      <div class="card">
-        <div class="row"><h2>Coverage</h2><span id="samples" class="count">0 samples</span></div>
-        <div id="bars"></div>
-      </div>
-
-      <div class="card" id="calib-card">
-        <h2>Calibration</h2>
-        <div class="actions">
-          <button id="btn-calibrate" disabled>Calibrate</button>
-          <button id="btn-save" disabled>Save</button>
-          <button id="btn-commit" disabled>Commit</button>
-        </div>
-        <p id="status" class="status"></p>
-        <pre id="result" class="result" hidden></pre>
-      </div>
-
-      <div class="card" id="camera-card">
-        <div class="row"><h2>Sample guide</h2><span class="count">drag = rotate · click a sphere = go there</span></div>
-        <canvas id="scene"></canvas>
-        <div class="next">
-          <div class="next-head">Next: <b id="next-name">—</b><span class="count" id="done-count"></span></div>
-          <img id="ref-img" alt="expected view" hidden>
-          <p id="ref-hint" class="count">Click the amber sphere to move there; it greens when a sample is captured.</p>
-        </div>
-        <div class="actions">
-          <button id="btn-reset">⌂ Reset pose</button>
-          <button id="btn-auto">▶ Auto-run</button>
-        </div>
-        <p id="pose" class="pose"></p>
-      </div>
-    </aside>
-  </main>
-
-  <script src="/app.js"></script>
+  <div id="app" data-page-title="Gazebo camera calibration"></div>
 </body>
 </html>

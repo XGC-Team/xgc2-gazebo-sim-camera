@@ -1,0 +1,162 @@
+html,
+body,
+#app {
+  width: 100%;
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+
+.gazebo-shell {
+  background:
+    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--color-accent) 9%, transparent), transparent 38%),
+    var(--color-bg-app);
+}
+
+.gazebo-content {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gazebo-page {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: var(--space-12);
+  padding: var(--space-12);
+}
+
+.gazebo-view-panel {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.gazebo-view-panel > .xgc-panel-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.gazebo-frame {
+  min-height: 220px;
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #05080c;
+}
+
+.gazebo-frame img {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.gazebo-hint {
+  margin: 0;
+  padding: var(--space-8) var(--space-10);
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.45;
+}
+
+.gazebo-side {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+}
+
+.gazebo-meta {
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+.gazebo-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.gazebo-actions > .xgc-button {
+  flex: 1 1 auto;
+}
+
+.gazebo-result {
+  margin-top: var(--space-10);
+}
+
+.gazebo-meters {
+  display: grid;
+  gap: var(--space-8);
+}
+
+#scene {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  display: block;
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #05080c;
+  cursor: grab;
+  touch-action: none;
+}
+
+#scene:active {
+  cursor: grabbing;
+}
+
+.gazebo-next {
+  display: grid;
+  gap: var(--space-6);
+  margin-block: var(--space-8);
+}
+
+.gazebo-next p {
+  margin: 0;
+}
+
+#ref-img {
+  width: 100%;
+  max-height: 150px;
+  display: block;
+  object-fit: contain;
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #05080c;
+}
+
+#ref-img[hidden],
+.legacy-state-source {
+  display: none !important;
+}
+
+.gazebo-pose {
+  margin: var(--space-8) 0 0;
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 780px) {
+  .gazebo-content {
+    overflow: visible;
+  }
+
+  .gazebo-page {
+    height: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .gazebo-side {
+    overflow: visible;
+  }
+
+  .gazebo-view-panel {
+    min-height: min(62vh, 520px);
+  }
+}
