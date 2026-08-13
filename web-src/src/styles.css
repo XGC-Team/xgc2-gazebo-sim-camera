@@ -28,19 +28,6 @@ body,
   padding: var(--space-page-padding);
 }
 
-.gazebo-view-panel {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.gazebo-view-panel > .xgc-panel-body {
-  min-height: 0;
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-}
-
 .gazebo-frame {
   min-height: 220px;
   flex: 1 1 auto;
@@ -84,7 +71,7 @@ body,
   gap: var(--space-control-gap);
 }
 
-.gazebo-actions > .xgc-button {
+.gazebo-actions > .gazebo-action {
   flex: 1 1 auto;
 }
 

@@ -119,7 +119,9 @@ function App() {
     >
       <main className="gazebo-page">
         <Panel
+          bodyLayout="column"
           className="gazebo-view-panel"
+          fill
           padding="none"
           title="Live camera"
           actions={<LegacyStatus id="conn" initial="connecting…" hideValues={['connected']} />}
@@ -135,9 +137,9 @@ function App() {
 
           <Panel id="calib-card" title="Calibration">
             <div className="gazebo-actions">
-              <Button id="btn-calibrate" disabled>Calibrate</Button>
-              <Button id="btn-save" disabled>Save</Button>
-              <Button id="btn-commit" tone="primary" appearance="solid" disabled>Commit</Button>
+              <Button id="btn-calibrate" className="gazebo-action" disabled>Calibrate</Button>
+              <Button id="btn-save" className="gazebo-action" disabled>Save</Button>
+              <Button id="btn-commit" className="gazebo-action" tone="primary" appearance="solid" disabled>Commit</Button>
             </div>
             <LegacyStatus id="status" hideValues={['']} />
             <LegacyCodeResult />
@@ -152,8 +154,8 @@ function App() {
               <p id="ref-hint" className="gazebo-meta">Select the next target; captured poses are marked in the guide.</p>
             </div>
             <div className="gazebo-actions">
-              <Button id="btn-reset">Reset pose</Button>
-              <Button id="btn-auto">Auto-run</Button>
+              <Button id="btn-reset" className="gazebo-action">Reset pose</Button>
+              <Button id="btn-auto" className="gazebo-action">Auto-run</Button>
             </div>
             <p id="pose" className="gazebo-meta gazebo-pose" />
           </Panel>
