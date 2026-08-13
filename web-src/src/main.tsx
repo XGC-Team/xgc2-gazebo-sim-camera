@@ -9,6 +9,7 @@ import {
   Panel,
   ProductBrand,
   ResourceMeter,
+  ResponsiveSplit,
   ScrollRegion,
   SegmentedControl,
   StatusText,
@@ -113,53 +114,59 @@ function App() {
       className="gazebo-shell"
       contentClassName="gazebo-content"
       contentPadding="none"
+      mobileBreakpoint="compact"
       mobileLayout="document"
       topbar={<Topbar brand={<ProductBrand product="Gazebo camera calibration" />} actions={<ThemeControl />} />}
     >
-      <main className="gazebo-page">
-        <Panel
-          bodyLayout="column"
-          className="gazebo-view-panel"
-          fill
-          padding="none"
-          title="Live camera"
-          actions={<LegacyStatus id="conn" initial="connecting…" hideValues={['connected']} />}
-        >
-          <div className="gazebo-frame"><img id="stream" src="/stream.mjpg" alt="Camera stream" /></div>
-          <p className="gazebo-hint">Live camera view. Select a sphere in the guide to move the simulated camera, or use Auto-run to sweep every pose and validate coverage.</p>
-        </Panel>
+      <div className="gazebo-page">
+        <ResponsiveSplit
+          primary={(
+            <Panel
+              bodyLayout="column"
+              className="gazebo-view-panel"
+              fill
+              padding="none"
+              title="Live camera"
+              actions={<LegacyStatus id="conn" initial="connecting…" hideValues={['connected']} />}
+            >
+              <div className="gazebo-frame"><img id="stream" src="/stream.mjpg" alt="Camera stream" /></div>
+              <p className="gazebo-hint">Live camera view. Select a sphere in the guide to move the simulated camera, or use Auto-run to sweep every pose and validate coverage.</p>
+            </Panel>
+          )}
+          secondary={(
+            <ScrollRegion className="gazebo-side" fill>
+              <Panel title="Coverage" actions={<span id="samples" className="gazebo-meta">0 samples</span>}>
+                <LegacyCoverage />
+              </Panel>
 
-        <ScrollRegion className="gazebo-side" fill>
-          <Panel title="Coverage" actions={<span id="samples" className="gazebo-meta">0 samples</span>}>
-            <LegacyCoverage />
-          </Panel>
+              <Panel id="calib-card" title="Calibration">
+                <div className="gazebo-actions">
+                  <Button id="btn-calibrate" className="gazebo-action" disabled>Calibrate</Button>
+                  <Button id="btn-save" className="gazebo-action" disabled>Save</Button>
+                  <Button id="btn-commit" className="gazebo-action" tone="primary" appearance="solid" disabled>Commit</Button>
+                </div>
+                <LegacyStatus id="status" hideValues={['']} />
+                <LegacyCodeResult />
+              </Panel>
 
-          <Panel id="calib-card" title="Calibration">
-            <div className="gazebo-actions">
-              <Button id="btn-calibrate" className="gazebo-action" disabled>Calibrate</Button>
-              <Button id="btn-save" className="gazebo-action" disabled>Save</Button>
-              <Button id="btn-commit" className="gazebo-action" tone="primary" appearance="solid" disabled>Commit</Button>
-            </div>
-            <LegacyStatus id="status" hideValues={['']} />
-            <LegacyCodeResult />
-          </Panel>
-
-          <Panel id="camera-card" title="Sample guide">
-            <p className="gazebo-hint">Drag to rotate the guide; select a sphere to move the camera.</p>
-            <canvas id="scene" />
-            <div className="gazebo-next">
-              <p>Next: <strong id="next-name">—</strong><span id="done-count" className="gazebo-meta" /></p>
-              <img id="ref-img" alt="Expected view" hidden />
-              <p id="ref-hint" className="gazebo-meta">Select the next target; captured poses are marked in the guide.</p>
-            </div>
-            <div className="gazebo-actions">
-              <Button id="btn-reset" className="gazebo-action">Reset pose</Button>
-              <Button id="btn-auto" className="gazebo-action">Auto-run</Button>
-            </div>
-            <p id="pose" className="gazebo-meta gazebo-pose" />
-          </Panel>
-        </ScrollRegion>
-      </main>
+              <Panel id="camera-card" title="Sample guide">
+                <p className="gazebo-hint">Drag to rotate the guide; select a sphere to move the camera.</p>
+                <canvas id="scene" />
+                <div className="gazebo-next">
+                  <p>Next: <strong id="next-name">—</strong><span id="done-count" className="gazebo-meta" /></p>
+                  <img id="ref-img" alt="Expected view" hidden />
+                  <p id="ref-hint" className="gazebo-meta">Select the next target; captured poses are marked in the guide.</p>
+                </div>
+                <div className="gazebo-actions">
+                  <Button id="btn-reset" className="gazebo-action">Reset pose</Button>
+                  <Button id="btn-auto" className="gazebo-action">Auto-run</Button>
+                </div>
+                <p id="pose" className="gazebo-meta gazebo-pose" />
+              </Panel>
+            </ScrollRegion>
+          )}
+        />
+      </div>
     </AppShell>
   )
 }
