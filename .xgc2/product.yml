@@ -80,7 +80,7 @@ release:
     xgc2-ros-msgs: rebuild
     xgc2-gazebo-sim-vrpn-bridge: verify
     xgc2-gazebo-sim-scenes: verify
-  repository: lxk36/xgc2-gazebo-sim-camera
+  repository: XGC-Team/xgc2-gazebo-sim-camera
   ref: main
   workflow: release.yml
   ci_workflow: ci.yml
