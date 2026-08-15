@@ -29,16 +29,6 @@ on:
         required: false
         default: ""
         type: string
-      run_cpp_quality:
-        description: Run optional source quality checks
-        required: true
-        default: false
-        type: boolean
-      run_source_tests:
-        description: Run an additional source test build
-        required: true
-        default: false
-        type: boolean
 
 permissions:
   actions: read
@@ -75,7 +65,6 @@ jobs:
             echo "apt_overlay_url requires a dependency_set_digest" >&2
             exit 1
           fi
-
   validate-release-inputs:
     needs: prepare-contract
     runs-on: ubuntu-latest
@@ -99,7 +88,6 @@ jobs:
             echo "::error::HEAD $source_sha does not match expected_source_sha ${{ inputs.expected_source_sha }}"
             exit 1
           fi
-
   package-compliance:
     needs: validate-release-inputs
     runs-on: ubuntu-latest
@@ -133,9 +121,7 @@ jobs:
               cd /workspace/repo
               .xgc2/scripts/check_package_compliance.sh
             '
-
   optional-source-tests:
-    if: ${{ inputs.run_cpp_quality || inputs.run_source_tests }}
     needs: validate-release-inputs
     runs-on: ubuntu-latest
     steps:
@@ -146,7 +132,6 @@ jobs:
             --work-dir "$RUNNER_TEMP/gazebo-sim-camera-source-tests" \
             --output-dir "$RUNNER_TEMP/gazebo-sim-camera-source-debs" \
             --skip-install-check
-
   deb-build:
     needs: validate-release-inputs
     strategy:
@@ -187,3 +172,8 @@ jobs:
             .ci/build-manifests/*.json
           include-hidden-files: true
           retention-days: 14
+
+
+
+
+
