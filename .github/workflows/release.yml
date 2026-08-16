@@ -95,16 +95,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: web-src/package-lock.json
       - name: Verify shared React calibration page
         run: |
-          npm --prefix web-src ci
-          npm --prefix web-src run typecheck
-          npm --prefix web-src run build
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace/repo" \
+            -w /workspace/repo \
+            ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-dev:1.0.0 \
+            bash -lc '
+              npm --prefix web-src ci
+              npm --prefix web-src run typecheck
+              npm --prefix web-src run build
+            '
           git diff --exit-code -- web/app.js web/style.css
       - name: Validate source and product contracts
         run: |
@@ -114,10 +115,8 @@ jobs:
             -e DEBIAN_FRONTEND=noninteractive \
             -e PYTHONPYCACHEPREFIX=/tmp/xgc2-gazebo-sim-camera-pycache \
             -v "$GITHUB_WORKSPACE:/workspace/repo:ro" \
-            ros:noetic-ros-base-focal bash -lc '
+            ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.0 bash -lc '
               set -euo pipefail
-              apt-get update
-              apt-get install -y --no-install-recommends libxml2-utils ros-noetic-xacro
               cd /workspace/repo
               .xgc2/scripts/check_package_compliance.sh
             '
@@ -172,7 +171,6 @@ jobs:
             .ci/build-manifests/*.json
           include-hidden-files: true
           retention-days: 14
-
 
 
 

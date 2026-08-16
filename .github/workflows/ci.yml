@@ -15,13 +15,9 @@ defaults:
 jobs:
   frontend:
     runs-on: ubuntu-latest
+    container: ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-dev:1.0.0
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: web-src/package-lock.json
       - name: Verify shared React calibration page
         run: |
           npm --prefix web-src ci
@@ -39,10 +35,8 @@ jobs:
             -e DEBIAN_FRONTEND=noninteractive \
             -e PYTHONPYCACHEPREFIX=/tmp/xgc2-gazebo-sim-camera-pycache \
             -v "$GITHUB_WORKSPACE:/workspace/repo:ro" \
-            ros:noetic-ros-base-focal bash -lc '
+            ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.0 bash -lc '
               set -euo pipefail
-              apt-get update
-              apt-get install -y --no-install-recommends libxml2-utils ros-noetic-xacro
               cd /workspace/repo
               .xgc2/scripts/check_package_compliance.sh
             '
@@ -81,6 +75,5 @@ jobs:
             .ci/build-manifests/*.json
           include-hidden-files: true
           retention-days: 14
-
 
 
