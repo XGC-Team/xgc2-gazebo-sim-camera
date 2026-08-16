@@ -116,7 +116,7 @@ class CameraContractTest(unittest.TestCase):
         width = int(rospy.get_param("~width", 1280))
         height = int(rospy.get_param("~height", 720))
         fps = float(rospy.get_param("~fps", 20.0))
-        hfov = float(rospy.get_param("~hfov", 1.3962634015954636))
+        hfov = float(rospy.get_param("~hfov", 1.9198621771937625))
         stream_info_topic = rospy.get_param(
             "~stream_info_topic", "/xgc/test/camera/stream_info"
         )

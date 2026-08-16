@@ -7,13 +7,12 @@
   <arg name="optical_frame" default="usb_cam_optical_frame"/>
   <arg name="gt_camera_link_frame" default="usb_cam_link_gt"/>
   <arg name="gt_optical_frame" default="usb_cam_optical_frame_gt"/>
-  <arg name="camera_profile" default="world_ultrawide_4k30_130"/>
+  <arg name="camera_profile" default="world_wide_4k30_110"/>
   <arg name="camera_profiles_file"
        default="$(find gazebo_sim_camera)/config/world_camera_profiles.yaml"/>
   <arg name="width" default="profile"/>
   <arg name="height" default="profile"/>
   <arg name="fps" default="profile"/>
-  <arg name="hfov" default="profile"/>
   <arg name="media_source_id" default="usb_cam"/>
   <arg name="media_rtp_port" default="5004"/>
   <arg name="media_control_socket" default="/tmp/xgc2/media/usb_cam.sock"/>
@@ -49,7 +48,7 @@
     <arg name="camera_profile" value="$(arg camera_profile)"/>
     <arg name="camera_profiles_file" value="$(arg camera_profiles_file)"/>
     <arg name="width" value="$(arg width)"/><arg name="height" value="$(arg height)"/>
-    <arg name="fps" value="$(arg fps)"/><arg name="hfov" value="$(arg hfov)"/>
+    <arg name="fps" value="$(arg fps)"/>
     <arg name="media_source_id" value="$(arg media_source_id)"/>
     <arg name="media_rtp_port" value="$(arg media_rtp_port)"/>
     <arg name="media_control_socket" value="$(arg media_control_socket)"/>

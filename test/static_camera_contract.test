@@ -5,7 +5,7 @@
     <arg name="model_name" value="gazebo_static_camera_contract"/>
     <arg name="camera_link_frame" value="contract_camera_link"/>
     <arg name="optical_frame" value="contract_camera_optical_frame"/>
-    <arg name="camera_profile" value="calibration_standard_720p20"/>
+    <arg name="camera_profile" value="calibration_wide_720p20_110"/>
     <arg name="media_source_id" value="contract_camera"/>
     <arg name="media_rtp_port" value="15004"/>
     <arg name="media_control_socket" value="/tmp/xgc2/media/contract_camera.sock"/>
@@ -27,7 +27,7 @@
     <param name="width" value="1280"/>
     <param name="height" value="720"/>
     <param name="fps" value="20.0"/>
-    <param name="hfov" value="1.3962634015954636"/>
+    <param name="hfov" value="1.9198621771937625"/>
     <param name="stream_info_topic" value="/xgc/test/camera/stream_info"/>
     <param name="video_topic" value="/xgc/test/camera/video_h264"/>
     <param name="frame_timing_topic" value="/xgc/test/camera/frame_timing"/>

@@ -10,7 +10,7 @@
   <xacro:arg name="model_name" default="gazebo_static_camera"/>
   <xacro:arg name="camera_link_frame" default="usb_cam_link"/>
   <xacro:arg name="optical_frame" default="usb_cam_optical_frame"/>
-  <xacro:arg name="camera_profile" default="world_ultrawide_4k30_130"/>
+  <xacro:arg name="camera_profile" default="world_wide_4k30_110"/>
   <xacro:arg name="camera_profiles_file" default="../config/world_camera_profiles.yaml"/>
   <xacro:arg name="media_source_id" default="usb_cam"/>
   <xacro:arg name="media_rtp_host" default="127.0.0.1"/>
@@ -23,9 +23,9 @@
   <xacro:arg name="stream_info_topic" default="/xgc/camera/world/stream_info"/>
   <xacro:arg name="encoded_publisher_queue_capacity" default="8"/>
   <!--
-    "profile" means use the selected atomic parameter group. These legacy
-    launch overrides remain available for direct roslaunch callers and tests,
-    but the managed ProcessDefinition intentionally exposes only a profile.
+    "profile" means use the selected atomic parameter group. Explicit launch
+    overrides remain available for direct roslaunch callers and tests, while
+    the managed ProcessDefinition exposes the profile and FOV in degrees.
   -->
   <xacro:arg name="media_bitrate" default="profile"/>
   <xacro:arg name="media_max_bitrate" default="profile"/>
@@ -36,7 +36,6 @@
   <xacro:arg name="height" default="profile"/>
   <xacro:arg name="fps" default="profile"/>
   <xacro:arg name="hfov_degrees" default="profile"/>
-  <xacro:arg name="hfov" default="profile"/>
   <xacro:arg name="near_clip" default="profile"/>
   <xacro:arg name="far_clip" default="profile"/>
   <xacro:arg name="noise_stddev" default="profile"/>
@@ -59,7 +58,7 @@
   <xacro:property name="camera_fps"
                   value="${float(profile_image['frame_rate_hz']) if xacro.arg('fps') == 'profile' else float(xacro.arg('fps'))}"/>
   <xacro:property name="camera_hfov"
-                  value="${radians(float(xacro.arg('hfov_degrees'))) if xacro.arg('hfov_degrees') != 'profile' else (radians(float(profile_lens['horizontal_fov_degrees'])) if xacro.arg('hfov') == 'profile' else float(xacro.arg('hfov')))}"/>
+                  value="${radians(float(xacro.arg('hfov_degrees'))) if xacro.arg('hfov_degrees') != 'profile' else radians(float(profile_lens['horizontal_fov_degrees']))}"/>
   <xacro:property name="camera_near_clip"
                   value="${float(profile_lens['near_clip_m']) if xacro.arg('near_clip') == 'profile' else float(xacro.arg('near_clip'))}"/>
   <xacro:property name="camera_far_clip"

@@ -10,7 +10,7 @@
   <arg name="model_name" default="gazebo_static_camera"/>
   <arg name="camera_link_frame" default="usb_cam_link"/>
   <arg name="optical_frame" default="usb_cam_optical_frame"/>
-  <arg name="camera_profile" default="world_ultrawide_4k30_130"/>
+  <arg name="camera_profile" default="world_wide_4k30_110"/>
   <arg name="camera_profiles_file"
        default="$(find gazebo_sim_camera)/config/world_camera_profiles.yaml"/>
   <arg name="media_source_id" default="usb_cam"/>
@@ -45,10 +45,8 @@
   <arg name="width" default="profile"/>
   <arg name="height" default="profile"/>
   <arg name="fps" default="profile"/>
-  <!-- Human-facing managed callers use degrees. The legacy hfov override
-       remains radians for backwards-compatible direct roslaunch calls. -->
+  <!-- The public FOV contract is degrees, matching the WebUI and profile file. -->
   <arg name="hfov_degrees" default="profile"/>
-  <arg name="hfov" default="profile"/>
   <arg name="near_clip" default="profile"/>
   <arg name="far_clip" default="profile"/>
   <arg name="noise_stddev" default="profile"/>
@@ -97,14 +95,14 @@
         args="--gui-client-plugin libKeyboardGUIPlugin.so"/>
 
   <param name="$(arg model_name)_description"
-         command="$(find xacro)/xacro '$(dirname)/../urdf/fixed_rgb_camera.urdf.xacro'
+         command="xacro '$(dirname)/../urdf/fixed_rgb_camera.urdf.xacro'
            model_name:=$(arg model_name)
            camera_link_frame:=$(arg camera_link_frame)
            optical_frame:=$(arg optical_frame)
            camera_profile:=$(arg camera_profile)
            camera_profiles_file:=$(arg camera_profiles_file)
            width:=$(arg width) height:=$(arg height) fps:=$(arg fps)
-           hfov_degrees:=$(arg hfov_degrees) hfov:=$(arg hfov)
+           hfov_degrees:=$(arg hfov_degrees)
            near_clip:=$(arg near_clip) far_clip:=$(arg far_clip) noise_stddev:=$(arg noise_stddev)
            static:=$(arg static)
            media_source_id:=$(arg media_source_id) media_rtp_host:=$(arg media_rtp_host)
@@ -136,7 +134,6 @@
     <param name="width" value="$(arg width)"/>
     <param name="height" value="$(arg height)"/>
     <param name="hfov_degrees" value="$(arg hfov_degrees)"/>
-    <param name="hfov" value="$(arg hfov)"/>
     <param name="media_control_socket" value="$(arg media_control_socket)"/>
     <param name="enable_continuous_jpeg_preview"
            value="$(arg enable_continuous_jpeg_preview)"/>

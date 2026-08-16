@@ -90,11 +90,8 @@ def _configured_intrinsics():
         int,
     )
     hfov_degrees = rospy.get_param("~hfov_degrees", "profile")
-    hfov = rospy.get_param("~hfov", "profile")
     if str(hfov_degrees) != "profile":
         horizontal_fov = math.radians(float(hfov_degrees))
-    elif str(hfov) != "profile":
-        horizontal_fov = float(hfov)
     else:
         horizontal_fov = math.radians(
             float(profile_lens["horizontal_fov_degrees"])

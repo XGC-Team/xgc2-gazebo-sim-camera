@@ -47,16 +47,21 @@ class WorldCameraProfilesTest(unittest.TestCase):
     def test_checked_in_profiles_have_a_strict_supported_shape(self):
         document = load_profiles()
         self.assertEqual(document["schema_version"], 1)
-        self.assertEqual(document["default_profile"], "world_ultrawide_4k30_130")
+        self.assertEqual(document["default_profile"], "world_wide_4k30_110")
         self.assertEqual(
             list(document["profiles"]),
             [
-                "world_standard_720p30",
-                "world_standard_1080p30",
-                "world_ultrawide_4k30_130",
-                "calibration_standard_720p20",
+                "world_wide_4k30_110",
+                "calibration_wide_720p20_110",
             ],
         )
+        world = document["profiles"]["world_wide_4k30_110"]
+        self.assertEqual(
+            (world["image"]["width_px"], world["image"]["height_px"]),
+            (3840, 2160),
+        )
+        self.assertEqual(world["image"]["frame_rate_hz"], 30.0)
+        self.assertEqual(world["lens"]["horizontal_fov_degrees"], 110.0)
 
         for name, profile in document["profiles"].items():
             with self.subTest(profile=name):
@@ -165,14 +170,14 @@ class WorldCameraProfilesTest(unittest.TestCase):
                     snapshot["jpeg_quality"],
                 )
 
-    def test_legacy_launch_overrides_win_without_changing_the_selected_profile(self):
+    def test_explicit_launch_overrides_win_without_changing_the_selected_profile(self):
         sensor = sensor_from(
             expand_profile(
-                "calibration_standard_720p20",
+                "calibration_wide_720p20_110",
                 "width:=640",
                 "height:=480",
                 "fps:=10",
-                "hfov:=1.0",
+                "hfov_degrees:=57.29577951308232",
                 "media_bitrate:=2000000",
             )
         )
@@ -192,7 +197,7 @@ class WorldCameraProfilesTest(unittest.TestCase):
     def test_managed_horizontal_fov_degrees_override_is_converted_to_radians(self):
         sensor = sensor_from(
             expand_profile(
-                "world_standard_1080p30",
+                "world_wide_4k30_110",
                 "hfov_degrees:=110",
             )
         )

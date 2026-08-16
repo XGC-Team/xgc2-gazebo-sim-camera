@@ -30,7 +30,7 @@ grep -q 'type="camera_lifecycle_keepalive.py"' "${SHARE}/launch/static_camera.la
 EXPANDED_PROFILE="$(mktemp)"
 trap 'rm -f "${EXPANDED_PROFILE}"' EXIT
 /opt/ros/noetic/bin/xacro "${SHARE}/urdf/fixed_rgb_camera.urdf.xacro" \
-  camera_profile:=calibration_standard_720p20 >"${EXPANDED_PROFILE}"
+  camera_profile:=calibration_wide_720p20_110 >"${EXPANDED_PROFILE}"
 grep -q '<width>1280</width>' "${EXPANDED_PROFILE}"
 grep -q '<height>720</height>' "${EXPANDED_PROFILE}"
 grep -q '<update_rate>20.0</update_rate>' "${EXPANDED_PROFILE}"

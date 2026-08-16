@@ -1,7 +1,7 @@
 schema: xgc2.product.v1
 id: xgc2-gazebo-sim-camera
 name: XGC2 Gazebo Sim Camera
-version: 0.1.0-17
+version: 0.1.0-18
 kind: ros1-apt
 summary: Profile-driven GPU-rendered H264 world camera and calibration scenes for
   Gazebo Classic 11.
@@ -85,4 +85,4 @@ release:
   workflow: release.yml
   ci_workflow: ci.yml
   apt_versions:
-    focal: 0.1.0-17
+    focal: 0.1.0-18

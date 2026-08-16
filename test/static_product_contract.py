@@ -31,13 +31,15 @@ profiles = yaml.safe_load(
 )
 
 assert profiles["schema_version"] == 1
-assert profiles["default_profile"] == "world_ultrawide_4k30_130"
+assert profiles["default_profile"] == "world_wide_4k30_110"
 assert list(profiles["profiles"]) == [
-    "world_standard_720p30",
-    "world_standard_1080p30",
-    "world_ultrawide_4k30_130",
-    "calibration_standard_720p20",
+    "world_wide_4k30_110",
+    "calibration_wide_720p20_110",
 ]
+assert {
+    profile["lens"]["horizontal_fov_degrees"]
+    for profile in profiles["profiles"].values()
+} == {110.0}
 
 assert "<gazebo><static>true</static></gazebo>" in xacro
 assert '<xacro:arg name="static" default="true"/>' in xacro
@@ -56,13 +58,14 @@ assert "<rosFrameTimingTopic>$(arg frame_timing_topic)</rosFrameTimingTopic>" in
 assert "<rosStreamInfoTopic>$(arg stream_info_topic)</rosStreamInfoTopic>" in xacro
 assert "libgazebo_ros_camera.so" not in xacro
 
-assert 'name="camera_profile" default="world_ultrawide_4k30_130"' in launch
+assert 'name="camera_profile" default="world_wide_4k30_110"' in launch
 assert "config/world_camera_profiles.yaml" in launch
+assert 'command="xacro ' in launch
+assert "$(find xacro)/xacro" not in launch
 for argument in (
     "width",
     "height",
     "fps",
-    "hfov",
     "near_clip",
     "far_clip",
     "noise_stddev",
@@ -75,6 +78,7 @@ for argument in (
     assert f'<arg name="{argument}" default="profile"/>' in launch
 assert '<arg name="hfov_degrees" default="profile"/>' in launch
 assert "hfov_degrees:=$(arg hfov_degrees)" in launch
+assert '<arg name="hfov"' not in launch
 assert "camera_profile:=$(arg camera_profile)" in launch
 assert "camera_profiles_file:=$(arg camera_profiles_file)" in launch
 assert "static:=$(arg static)" in launch
@@ -88,8 +92,10 @@ assert 'name="xgc_optical_frame"' not in launch
 assert '<param name="camera_link_frame" value="$(arg camera_link_frame)"/>' in launch
 assert '<param name="optical_frame" value="$(arg optical_frame)"/>' in launch
 
+assert 'name="camera_profile" default="calibration_wide_720p20_110"' in intrinsic
+assert 'name="camera_profile" default="world_wide_4k30_110"' in extrinsic
 for calibration_launch in (intrinsic, extrinsic):
-    assert 'name="camera_profile" default="world_ultrawide_4k30_130"' in calibration_launch
+    assert '<arg name="hfov"' not in calibration_launch
     assert '<arg name="camera_profile" value="$(arg camera_profile)"/>' in calibration_launch
     assert '<arg name="camera_profiles_file" value="$(arg camera_profiles_file)"/>' in calibration_launch
     assert '<arg name="publish_encoded_video" default="true"/>' in calibration_launch

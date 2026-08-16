@@ -31,8 +31,8 @@ for path in "${required[@]}"; do test -f "${path}" || { echo "Missing ${path}" >
 
 grep -q 'id: xgc2-gazebo-sim-camera' .xgc2/product.yml
 grep -Eq '^version: [0-9]+\.[0-9]+\.[0-9]+-[0-9]+$' .xgc2/product.yml
-grep -q '^version: 0.1.0-17$' .xgc2/product.yml
-grep -q '^    focal: 0.1.0-17$' .xgc2/product.yml
+grep -q '^version: 0.1.0-18$' .xgc2/product.yml
+grep -q '^    focal: 0.1.0-18$' .xgc2/product.yml
 grep -q 'PACKAGE="ros-noetic-xgc2-gazebo-sim-camera"' .xgc2/scripts/package_debs.sh
 grep -q 'PLUGIN="${PREFIX}/lib/libxgc_gazebo_media_camera.so"' .xgc2/scripts/package_debs.sh
 grep -q '<name>gazebo_sim_camera</name>' package.xml
@@ -52,6 +52,6 @@ for xml in launch/*.launch test/*.test; do xmllint --noout "${xml}"; done
 
 # Verify both a named profile and the advanced per-field compatibility
 # overrides accepted by direct roslaunch users.
-/opt/ros/noetic/bin/xacro urdf/fixed_rgb_camera.urdf.xacro camera_profile:=calibration_standard_720p20 >/dev/null
-/opt/ros/noetic/bin/xacro urdf/fixed_rgb_camera.urdf.xacro model_name:=test_camera camera_link_frame:=usb_cam_link optical_frame:=usb_cam_optical_frame width:=320 height:=240 fps:=10 hfov:=1.0 near_clip:=0.05 far_clip:=20 noise_stddev:=0 >/dev/null
+/opt/ros/noetic/bin/xacro urdf/fixed_rgb_camera.urdf.xacro camera_profile:=calibration_wide_720p20_110 >/dev/null
+/opt/ros/noetic/bin/xacro urdf/fixed_rgb_camera.urdf.xacro model_name:=test_camera camera_link_frame:=usb_cam_link optical_frame:=usb_cam_optical_frame width:=320 height:=240 fps:=10 hfov_degrees:=110 near_clip:=0.05 far_clip:=20 noise_stddev:=0 >/dev/null
 echo "Package compliance checks passed"
