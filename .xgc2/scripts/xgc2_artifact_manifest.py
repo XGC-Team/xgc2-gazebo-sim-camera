@@ -41,7 +41,7 @@ def main():
             "sha256": sha256(deb), "size": deb.stat().st_size,
         })
     payload = {
-        "schema": "xgc2.build-artifact.v2", "product": args.product,
+        "schema": "xgc2.build-artifact.v1", "product": args.product,
         "source_sha": args.source_sha, "version": args.product_version,
         "distribution": args.distribution, "architecture": args.architecture,
         "ci": {"run_id": str(args.ci_run_id), "workflow": args.ci_workflow, "workflow_ref": args.ci_workflow_ref},
