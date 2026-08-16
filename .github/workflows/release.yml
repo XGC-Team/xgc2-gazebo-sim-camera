@@ -106,7 +106,7 @@ jobs:
               npm --prefix web-src run typecheck
               npm --prefix web-src run build
             '
-          git diff --exit-code -- web/app.js web/style.css
+          git -C "$GITHUB_WORKSPACE" diff --exit-code -- web/app.js web/style.css
       - name: Validate source and product contracts
         run: |
           set -euo pipefail
@@ -117,6 +117,7 @@ jobs:
             -v "$GITHUB_WORKSPACE:/workspace/repo:ro" \
             ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.0 bash -lc '
               set -euo pipefail
+              source /opt/ros/noetic/setup.bash
               cd /workspace/repo
               .xgc2/scripts/check_package_compliance.sh
             '
@@ -171,7 +172,6 @@ jobs:
             .ci/build-manifests/*.json
           include-hidden-files: true
           retention-days: 14
-
 
 
 
