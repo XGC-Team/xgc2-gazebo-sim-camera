@@ -106,6 +106,7 @@ jobs:
               npm --prefix web-src run typecheck
               npm --prefix web-src run build
             '
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git -C "$GITHUB_WORKSPACE" diff --exit-code -- web/app.js web/style.css
       - name: Validate source and product contracts
         run: |
@@ -172,6 +173,4 @@ jobs:
             .ci/build-manifests/*.json
           include-hidden-files: true
           retention-days: 14
-
-
 
