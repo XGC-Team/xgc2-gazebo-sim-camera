@@ -1780,6 +1780,12 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     configuration.rcParams.enableAQ = 1;
     configuration.rcParams.aqStrength = 8;
     configuration.rcParams.strictGOPTarget = 0;
+    configuration.rcParams.enableLookahead = 0;
+    // WebRTC requires presentation timestamps to stay in decode order.  The
+    // low-latency preset normally supplies this, but leaving it implicit lets
+    // driver/preset changes advertise a reorder window in SPS/VUI even though
+    // frameIntervalP=1 emits IPP only.
+    configuration.rcParams.zeroReorderDelay = 1;
     configuration.encodeCodecConfig.h264Config.repeatSPSPPS = 1;
     configuration.encodeCodecConfig.h264Config.outputAUD = 1;
     configuration.encodeCodecConfig.h264Config.level = NV_ENC_LEVEL_H264_51;
@@ -1835,7 +1841,14 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     bitstream_ = bitstream.bitstreamBuffer;
     encoderWidth_ = width;
     encoderHeight_ = height;
-    encodedFrameIndex_ = 0;
+    // encodedFrameIndex_ is the transport clock, not encoder-local state.
+    // Gazebo can move simulation time backwards while inserting a model. That
+    // deliberately rebuilds NVENC above, but the loopback RTP source and its
+    // WebRTC readers remain alive. Resetting this counter here would move the
+    // RTP/PTS clock backwards and MediaMTX would terminate the first browser
+    // session as an apparent H264 B-frame stream. Keep it monotonic for the
+    // entire camera-plugin lifetime; a uint32 RTP wrap is handled normally by
+    // the receiver.
     pendingEncodedFrames_.clear();
     const bool epochAlreadyPending = ROSHasPendingEpoch();
     if (encoderEverInitialized_ && !epochAlreadyPending) {

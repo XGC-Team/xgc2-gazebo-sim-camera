@@ -171,6 +171,16 @@ assert "kMaximumPendingEncodedFrames" in encode_frame
 assert "DISCONTINUITY_ENCODER_RESET" in encode_frame
 assert "DestroyEncoder();" in encode_frame
 
+ensure_encoder = media_plugin[
+    media_plugin.index("bool EnsureEncoder"):
+    media_plugin.index("bool EnsureConversionTexture")
+]
+assert "configuration.frameIntervalP = 1" in ensure_encoder
+assert "configuration.rcParams.enableLookahead = 0" in ensure_encoder
+assert "configuration.rcParams.zeroReorderDelay = 1" in ensure_encoder
+assert "encodedFrameIndex_ = 0" not in ensure_encoder
+assert "transport clock, not encoder-local state" in ensure_encoder
+
 source_build = docker_build.index("    catkin_make\n")
 source_overlay = docker_build.index(
     "    source /workspace/work/devel/setup.bash\n"
