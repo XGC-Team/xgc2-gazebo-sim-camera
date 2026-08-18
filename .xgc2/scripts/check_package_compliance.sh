@@ -31,8 +31,8 @@ for path in "${required[@]}"; do test -f "${path}" || { echo "Missing ${path}" >
 
 grep -q 'id: xgc2-gazebo-sim-camera' .xgc2/product.yml
 grep -Eq '^version: [0-9]+\.[0-9]+\.[0-9]+-[0-9]+$' .xgc2/product.yml
-grep -q '^version: 0.1.0-18$' .xgc2/product.yml
-grep -q '^    focal: 0.1.0-18$' .xgc2/product.yml
+grep -q '^version: 0.1.0-19$' .xgc2/product.yml
+grep -q '^    focal: 0.1.0-19$' .xgc2/product.yml
 grep -q 'PACKAGE="ros-noetic-xgc2-gazebo-sim-camera"' .xgc2/scripts/package_debs.sh
 grep -q 'PLUGIN="${PREFIX}/lib/libxgc_gazebo_media_camera.so"' .xgc2/scripts/package_debs.sh
 grep -q '<name>gazebo_sim_camera</name>' package.xml
