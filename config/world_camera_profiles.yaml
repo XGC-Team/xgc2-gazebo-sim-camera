@@ -23,6 +23,24 @@ profiles:
     snapshot:
       jpeg_quality: 90
 
+  world_wide_1080p30_110:
+    image:
+      width_px: 1920
+      height_px: 1080
+      frame_rate_hz: 30.0
+    lens:
+      horizontal_fov_degrees: 110.0
+      near_clip_m: 0.05
+      far_clip_m: 100.0
+      gaussian_noise_stddev: 0.0
+    encoder:
+      average_bitrate_bps: 9000000
+      maximum_bitrate_bps: 13500000
+      pacing_bitrate_bps: 27000000
+      vbv_buffer_ms: 500
+    snapshot:
+      jpeg_quality: 90
+
   calibration_wide_720p20_110:
     image:
       width_px: 1280

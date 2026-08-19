@@ -52,6 +52,7 @@ class WorldCameraProfilesTest(unittest.TestCase):
             list(document["profiles"]),
             [
                 "world_wide_4k30_110",
+                "world_wide_1080p30_110",
                 "calibration_wide_720p20_110",
             ],
         )
@@ -62,6 +63,13 @@ class WorldCameraProfilesTest(unittest.TestCase):
         )
         self.assertEqual(world["image"]["frame_rate_hz"], 30.0)
         self.assertEqual(world["lens"]["horizontal_fov_degrees"], 110.0)
+        preview = document["profiles"]["world_wide_1080p30_110"]
+        self.assertEqual(
+            (preview["image"]["width_px"], preview["image"]["height_px"]),
+            (1920, 1080),
+        )
+        self.assertEqual(preview["image"]["frame_rate_hz"], 30.0)
+        self.assertEqual(preview["lens"]["horizontal_fov_degrees"], 110.0)
 
         for name, profile in document["profiles"].items():
             with self.subTest(profile=name):
