@@ -34,8 +34,17 @@ assert profiles["schema_version"] == 1
 assert profiles["default_profile"] == "world_wide_4k30_110"
 assert list(profiles["profiles"]) == [
     "world_wide_4k30_110",
+    "world_wide_1080p30_110",
     "calibration_wide_720p20_110",
 ]
+for profile in profiles["profiles"].values():
+    assert profile["lens"]["near_clip_m"] > 0.065
+assert "optical_origin_x" in xacro
+assert "<pose>${optical_origin_x} 0 0 0 0 0</pose>" in xacro
+assert 'xyz="${optical_origin_x} 0 0"' in xacro
+assert "args=\"0.067 0 0 -1.5707963267948966 0 -1.5707963267948966" in launch
+assert "if (!rosConsumersActive_.load())" in media_plugin
+assert "rosFreshRenderGeneration_.fetch_add(1);" in media_plugin
 assert {
     profile["lens"]["horizontal_fov_degrees"]
     for profile in profiles["profiles"].values()
@@ -127,6 +136,7 @@ assert "self._image_timer = None" in camera_contract
 assert "if self._continuous_jpeg_preview:" in camera_contract
 assert "self._publish_camera_info(rospy.Time.now())" in camera_contract
 assert "0.0, 0.0, 1.0," in camera_contract
+assert "(0.067, 0.0, 0.0)" in camera_contract
 
 assert "foxglove_msgs::CompressedVideo" in media_plugin
 assert "xgc_camera_msgs::FrameTiming" in media_plugin

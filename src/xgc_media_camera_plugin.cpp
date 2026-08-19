@@ -1152,6 +1152,11 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
       desiredActive_.store(*active);
       if (*active) {
         forceKeyframe_.store(true);
+        // RTP set-active must not encode the dormant pre-activation texture.
+        // ROS first-connection already bumps this when RTP is still idle.
+        if (!rosConsumersActive_.load()) {
+          rosFreshRenderGeneration_.fetch_add(1);
+        }
       } else {
         ClearRTPQueue();
       }

@@ -170,7 +170,7 @@
           args="$(arg x) $(arg y) $(arg z) $(arg yaw) $(arg pitch) $(arg roll)
             $(arg parent_frame) $(arg camera_link_frame) 100"/>
     <node pkg="tf" type="static_transform_publisher" name="$(arg model_name)_optical_frame"
-          args="0 0 0 -1.5707963267948966 0 -1.5707963267948966
+          args="0.067 0 0 -1.5707963267948966 0 -1.5707963267948966
             $(arg camera_link_frame) $(arg optical_frame) 100"/>
   </group>
 
@@ -179,7 +179,7 @@
           args="$(arg x) $(arg y) $(arg z) $(arg yaw) $(arg pitch) $(arg roll)
             $(arg parent_frame) $(arg gt_camera_link_frame) 100"/>
     <node pkg="tf" type="static_transform_publisher" name="$(arg model_name)_validation_optical_frame"
-          args="0 0 0 -1.5707963267948966 0 -1.5707963267948966
+          args="0.067 0 0 -1.5707963267948966 0 -1.5707963267948966
             $(arg gt_camera_link_frame) $(arg gt_optical_frame) 100"/>
   </group>
 </launch>

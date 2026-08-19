@@ -317,7 +317,7 @@ class CameraContractPublisher:
             _transform(
                 self._camera_link_frame,
                 self._optical_frame,
-                (0.0, 0.0, 0.0),
+                (0.067, 0.0, 0.0),
                 self._optical_rotation,
                 stamp,
             ),

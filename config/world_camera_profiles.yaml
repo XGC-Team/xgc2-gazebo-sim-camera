@@ -12,7 +12,7 @@ profiles:
       frame_rate_hz: 30.0
     lens:
       horizontal_fov_degrees: 110.0
-      near_clip_m: 0.05
+      near_clip_m: 0.10
       far_clip_m: 100.0
       gaussian_noise_stddev: 0.0
     encoder:
@@ -30,7 +30,7 @@ profiles:
       frame_rate_hz: 30.0
     lens:
       horizontal_fov_degrees: 110.0
-      near_clip_m: 0.05
+      near_clip_m: 0.10
       far_clip_m: 100.0
       gaussian_noise_stddev: 0.0
     encoder:
@@ -48,7 +48,7 @@ profiles:
       frame_rate_hz: 20.0
     lens:
       horizontal_fov_degrees: 110.0
-      near_clip_m: 0.05
+      near_clip_m: 0.10
       far_clip_m: 100.0
       gaussian_noise_stddev: 0.0
     encoder:

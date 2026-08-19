@@ -82,6 +82,10 @@
   <xacro:property name="lens_length" value="0.035"/>
   <xacro:property name="lens_radius" value="0.04"/>
   <xacro:property name="lens_center_x" value="${(body_depth + lens_length) / 2.0}"/>
+  <!-- Pinhole just past the black lens. A sensor at the link origin looks
+       into Gazebo/Black; GCS object-fit:cover then crops the remaining
+       scene ring into a black panel. -->
+  <xacro:property name="optical_origin_x" value="${lens_center_x + lens_length / 2.0 + 0.002}"/>
 
   <link name="$(arg camera_link_frame)">
     <inertial>
@@ -111,8 +115,9 @@
   <joint name="camera_link_to_optical" type="fixed">
     <parent link="$(arg camera_link_frame)"/>
     <child link="$(arg optical_frame)"/>
-    <!-- REP-103: camera link x-forward/z-up to optical z-forward/x-right/y-down. -->
-    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+    <!-- REP-103: camera link x-forward/z-up to optical z-forward/x-right/y-down.
+         Translate to the same pinhole as the Gazebo sensor pose. -->
+    <origin xyz="${optical_origin_x} 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
   </joint>
 
   <!--
@@ -134,6 +139,7 @@
     <!-- Gazebo Classic does not reliably preserve URDF RGBA colors. -->
     <material>Gazebo/Black</material>
     <sensor name="rgb_camera" type="camera">
+      <pose>${optical_origin_x} 0 0 0 0 0</pose>
       <always_on>true</always_on>
       <update_rate>${camera_fps}</update_rate>
       <visualize>false</visualize>

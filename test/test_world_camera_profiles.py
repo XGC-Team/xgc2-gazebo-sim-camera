@@ -112,7 +112,9 @@ class WorldCameraProfilesTest(unittest.TestCase):
                 self.assertLessEqual(image["frame_rate_hz"], 240.0)
                 self.assertGreater(lens["horizontal_fov_degrees"], 0.0)
                 self.assertLess(lens["horizontal_fov_degrees"], math.degrees(3.0))
-                self.assertGreater(lens["near_clip_m"], 0.0)
+                # Past the decorative lens front at 0.065 m. A smaller clip lets
+                # Gazebo/Black fill the 110° image; GCS cover then shows a black panel.
+                self.assertGreater(lens["near_clip_m"], 0.065)
                 self.assertGreater(lens["far_clip_m"], lens["near_clip_m"])
                 self.assertGreaterEqual(lens["gaussian_noise_stddev"], 0.0)
                 self.assertGreaterEqual(encoder["average_bitrate_bps"], 128000)
@@ -201,6 +203,16 @@ class WorldCameraProfilesTest(unittest.TestCase):
             sensor.findtext("plugin[@name='xgc_media_camera']/maxBitrate"),
             "6000000",
         )
+
+    def test_sensor_pinhole_sits_past_the_black_lens(self):
+        sensor = sensor_from(expand_profile("world_wide_1080p30_110"))
+        pose = sensor.findtext("pose")
+        self.assertIsNotNone(pose)
+        origin_x = float(pose.split()[0])
+        # body_depth/2 + lens_length + 0.002 = 0.067
+        self.assertAlmostEqual(origin_x, 0.067)
+        self.assertGreater(origin_x, 0.065)
+        self.assertAlmostEqual(float(sensor.findtext("camera/clip/near")), 0.10)
 
     def test_managed_horizontal_fov_degrees_override_is_converted_to_radians(self):
         sensor = sensor_from(
