@@ -202,25 +202,27 @@ class GazeboModelController:
         self._publish_state(state)
 
 
-def calibration_views():
-    """Views ordered to make consecutive accepted samples geometrically distinct."""
-    return [
-        ("far_center", (-4.0, 0.0, 1.5), 0.0, 0.0, 0.0),
-        ("far_left", (-4.0, 0.0, 1.5), 0.48, 0.0, 0.0),
-        ("far_right", (-4.0, 0.0, 1.5), -0.48, 0.0, 0.0),
-        ("far_top", (-4.0, 0.0, 1.5), 0.0, 0.22, 0.0),
-        ("far_bottom", (-4.0, 0.0, 1.5), 0.0, -0.30, 0.0),
-        ("far_upper_left", (-4.0, 0.0, 1.5), 0.40, 0.22, 0.0),
-        ("far_lower_right", (-4.0, 0.0, 1.5), -0.40, -0.22, 0.0),
-        ("medium_center", (-2.0, 0.0, 1.5), 0.0, 0.0, 0.0),
-        ("near_center", (0.2, 0.0, 1.5), 0.0, 0.0, 0.0),
-        ("near_left_oblique", (-0.5, 2.2, 1.5), 0.0, 0.0, 0.0),
-        ("near_right_oblique", (-0.5, -2.2, 1.5), 0.0, 0.0, 0.0),
-        ("near_high_oblique", (-0.5, 0.0, 3.1), 0.0, 0.0, 0.0),
-        ("near_low_oblique", (-0.5, 0.0, 0.1), 0.0, 0.0, 0.0),
-        ("diagonal_oblique_a", (-0.5, 2.6, 3.2), 0.0, 0.0, 0.0),
-        ("diagonal_oblique_b", (-0.5, -2.6, -0.2), 0.0, 0.0, 0.0),
+def calibration_views(target=(2.0, 0.0, 2.2)):
+    """Measured views that fill coverage without taking the camera near ground."""
+    tx, ty, tz = target
+    specs = [
+        ("far_lower_left", (tx - 6.0, ty + 0.3, tz + 0.1), -0.76, -0.24),
+        ("far_lower_right", (tx - 6.0, ty - 0.3, tz + 0.1), 0.76, -0.24),
+        ("far_bottom", (tx - 6.0, ty, tz - 0.1), 0.0, -0.48),
+        ("far_lower_center", (tx - 6.0, ty, tz), 0.0, -0.24),
+        ("upper_perspective", (tx - 2.5, ty - 1.2, tz - 0.8), 0.0, 0.44),
+        ("upper_oblique", (tx - 3.5, ty + 2.0, tz + 1.0), 0.0, 0.44),
+        ("center_oblique_left", (tx - 2.5, ty + 1.2, tz - 0.8), 0.0, 0.0),
+        ("center_oblique_right", (tx - 2.5, ty - 1.2, tz + 0.8), 0.0, 0.0),
+        ("medium_center", (tx - 4.0, ty, tz), 0.0, -0.08),
+        ("near_center", (tx - 2.0, ty, tz), 0.0, -0.08),
+        ("near_large", (tx - 1.4, ty, tz), 0.0, -0.08),
+        ("near_maximum", (tx - 1.2, ty, tz), 0.0, -0.08),
+        ("diagonal_high", (tx - 2.5, ty + 2.6, tz + 1.7), 0.0, 0.0),
+        ("lower_right_perspective", (tx - 4.0, ty - 1.0, tz - 0.8), 0.0, 0.20),
+        ("upper_left_perspective", (tx - 2.5, ty + 1.2, tz + 0.8), 0.0, 0.28),
     ]
+    return [(name, position, yaw, pitch, 0.0) for name, position, yaw, pitch in specs]
 
 
 def wait_for_detection(image_topic, board_size, timeout, maximum_width):
@@ -251,7 +253,7 @@ def parser():
     result.add_argument("--board-size", type=parse_board_size, default=parse_board_size("7x5"))
     result.add_argument("--board-x", type=float, default=2.0)
     result.add_argument("--board-y", type=float, default=0.0)
-    result.add_argument("--board-z", type=float, default=1.5)
+    result.add_argument("--board-z", type=float, default=2.2)
     result.add_argument("--settle-seconds", type=float, default=1.0)
     result.add_argument("--hold-seconds", type=float, default=0.8)
     result.add_argument("--detection-timeout", type=float, default=4.0)
@@ -269,7 +271,7 @@ def main():
     samples = []
     complete = False
     try:
-        for name, position, yaw_offset, pitch_offset, roll in calibration_views():
+        for name, position, yaw_offset, pitch_offset, roll in calibration_views(target):
             if rospy.is_shutdown():
                 break
             rospy.loginfo("Calibration view %s at %s", name, position)

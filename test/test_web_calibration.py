@@ -71,13 +71,14 @@ class PoseSerializationTest(unittest.TestCase):
 
 class RecommendedViewsTest(unittest.TestCase):
     def test_views_are_distinct_and_cover_x_and_y(self):
-        views = MODULE.recommended_views((2.0, 0.0, 1.5))
-        self.assertEqual(len(views), 10)
+        views = MODULE.recommended_views((2.0, 0.0, 2.2))
+        self.assertEqual(len(views), 15)
         positions = {tuple(v["position"]) for v in views}
         self.assertEqual(len(positions), len(views))  # every pose is its own marker
         # X/Y only fill when the board is pushed off-centre via an aim offset.
         self.assertTrue(any(v["yaw_offset"] != 0 for v in views))
         self.assertTrue(any(v["pitch_offset"] != 0 for v in views))
+        self.assertGreaterEqual(min(v["position"][2] for v in views), 1.4)
 
 
 class WebDirTest(unittest.TestCase):

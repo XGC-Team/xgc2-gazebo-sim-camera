@@ -30,9 +30,9 @@
   <arg name="media_max_bitrate" default="profile"/>
   <arg name="media_pacing_bitrate" default="profile"/>
   <arg name="media_vbv_buffer_milliseconds" default="profile"/>
-  <arg name="camera_x" default="-4.0"/><arg name="camera_y" default="0.0"/><arg name="camera_z" default="1.5"/>
+  <arg name="camera_x" default="-4.0"/><arg name="camera_y" default="0.0"/><arg name="camera_z" default="2.2"/>
   <arg name="camera_roll" default="0.0"/><arg name="camera_pitch" default="0.0"/><arg name="camera_yaw" default="0.0"/>
-  <arg name="board_x" default="2.0"/><arg name="board_y" default="0.0"/><arg name="board_z" default="1.5"/>
+  <arg name="board_x" default="2.0"/><arg name="board_y" default="0.0"/><arg name="board_z" default="2.2"/>
   <arg name="board_roll" default="0.0"/><arg name="board_pitch" default="0.0"/><arg name="board_yaw" default="0.0"/>
 
   <include file="$(dirname)/static_camera.launch">

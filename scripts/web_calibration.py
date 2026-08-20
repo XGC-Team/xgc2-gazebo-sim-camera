@@ -79,18 +79,21 @@ def recommended_views(target):
     """
     tx, ty, tz = target
     specs = [
-        ("far (small)", (tx - 6.0, ty, tz), 0.0, 0.0),
-        ("near (big)", (tx - 1.8, ty, tz), 0.0, 0.0),
-        # left/right sit far (small board = frame margin) with a strong yaw
-        # offset so the board reaches the image edges -> fills the X range.
-        ("left", (tx - 7.0, ty + 0.3, tz), 0.55, 0.0),
-        ("right", (tx - 7.0, ty - 0.3, tz), -0.55, 0.0),
-        ("top", (tx - 4.0, ty, tz + 0.8), 0.0, 0.25),
-        ("bottom", (tx - 4.0, ty, tz - 0.8), 0.0, -0.30),
-        ("oblique UL", (tx - 2.5, ty + 2.2, tz + 1.9), 0.0, 0.0),
-        ("oblique UR", (tx - 2.5, ty - 2.2, tz + 1.9), 0.0, 0.0),
-        ("oblique LL", (tx - 2.5, ty + 2.2, tz - 1.0), 0.0, 0.0),
-        ("oblique LR", (tx - 2.5, ty - 2.2, tz - 1.0), 0.0, 0.0),
+        ("far lower left", (tx - 6.0, ty + 0.3, tz + 0.1), -0.76, -0.24),
+        ("far lower right", (tx - 6.0, ty - 0.3, tz + 0.1), 0.76, -0.24),
+        ("far bottom", (tx - 6.0, ty, tz - 0.1), 0.0, -0.48),
+        ("far lower center", (tx - 6.0, ty, tz), 0.0, -0.24),
+        ("upper perspective", (tx - 2.5, ty - 1.2, tz - 0.8), 0.0, 0.44),
+        ("upper oblique", (tx - 3.5, ty + 2.0, tz + 1.0), 0.0, 0.44),
+        ("center oblique left", (tx - 2.5, ty + 1.2, tz - 0.8), 0.0, 0.0),
+        ("center oblique right", (tx - 2.5, ty - 1.2, tz + 0.8), 0.0, 0.0),
+        ("medium center", (tx - 4.0, ty, tz), 0.0, -0.08),
+        ("near center", (tx - 2.0, ty, tz), 0.0, -0.08),
+        ("near large", (tx - 1.4, ty, tz), 0.0, -0.08),
+        ("near maximum", (tx - 1.2, ty, tz), 0.0, -0.08),
+        ("diagonal high", (tx - 2.5, ty + 2.6, tz + 1.7), 0.0, 0.0),
+        ("lower right perspective", (tx - 4.0, ty - 1.0, tz - 0.8), 0.0, 0.20),
+        ("upper left perspective", (tx - 2.5, ty + 1.2, tz + 0.8), 0.0, 0.28),
     ]
     return [{
         "name": name,
@@ -123,7 +126,7 @@ class CameraController(object):
     """
 
     def __init__(self, model_name, linear_step, angular_step,
-                 target=(2.0, 0.0, 1.5), min_scale=0.125, max_scale=8.0):
+                 target=(2.0, 0.0, 2.2), min_scale=0.125, max_scale=8.0):
         self._controller = GazeboModelController(model_name)
         self.initial_pose = self._controller.current_pose()
         self.pose = copy.deepcopy(self.initial_pose)
@@ -594,7 +597,7 @@ def parser():
     result.add_argument("--angular-step", type=float, default=0.05)
     result.add_argument("--board-x", type=float, default=2.0)
     result.add_argument("--board-y", type=float, default=0.0)
-    result.add_argument("--board-z", type=float, default=1.5)
+    result.add_argument("--board-z", type=float, default=2.2)
     result.add_argument("--refs-dir", default=os.path.expanduser("~/.ros/web_calibration_refs"),
                         help="where per-target reference snapshots are stored")
     result.add_argument("--no-service-check", action="store_true",
