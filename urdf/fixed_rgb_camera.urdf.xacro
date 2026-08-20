@@ -12,6 +12,7 @@
   <xacro:arg name="optical_frame" default="usb_cam_optical_frame"/>
   <xacro:arg name="camera_profile" default="world_wide_4k30_110"/>
   <xacro:arg name="camera_profiles_file" default="../config/world_camera_profiles.yaml"/>
+  <xacro:arg name="media_plugin_filename" default="libxgc_gazebo_media_camera.so"/>
   <xacro:arg name="media_source_id" default="usb_cam"/>
   <xacro:arg name="media_rtp_host" default="127.0.0.1"/>
   <xacro:arg name="media_rtp_port" default="5004"/>
@@ -153,7 +154,7 @@
         <clip><near>${camera_near_clip}</near><far>${camera_far_clip}</far></clip>
         <noise><type>gaussian</type><mean>0.0</mean><stddev>${camera_noise_stddev}</stddev></noise>
       </camera>
-      <plugin name="xgc_media_camera" filename="libxgc_gazebo_media_camera.so">
+      <plugin name="xgc_media_camera" filename="$(arg media_plugin_filename)">
         <sourceId>$(arg media_source_id)</sourceId>
         <frameId>$(arg optical_frame)</frameId>
         <rtpHost>$(arg media_rtp_host)</rtpHost>

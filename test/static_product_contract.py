@@ -56,7 +56,8 @@ assert "<gravity>false</gravity>" in xacro
 assert "xacro.load_yaml(xacro.arg('camera_profiles_file'))" in xacro
 assert "radians(float(profile_lens['horizontal_fov_degrees']))" in xacro
 assert "radians(float(xacro.arg('hfov_degrees')))" in xacro
-assert 'filename="libxgc_gazebo_media_camera.so"' in xacro
+assert '<xacro:arg name="media_plugin_filename" default="libxgc_gazebo_media_camera.so"/>' in xacro
+assert 'filename="$(arg media_plugin_filename)"' in xacro
 assert "<sourceId>$(arg media_source_id)</sourceId>" in xacro
 assert "<rtpPort>$(arg media_rtp_port)</rtpPort>" in xacro
 assert "<controlSocket>$(arg media_control_socket)</controlSocket>" in xacro
@@ -90,6 +91,8 @@ assert "hfov_degrees:=$(arg hfov_degrees)" in launch
 assert '<arg name="hfov"' not in launch
 assert "camera_profile:=$(arg camera_profile)" in launch
 assert "camera_profiles_file:=$(arg camera_profiles_file)" in launch
+assert '<arg name="media_plugin_filename" default="libxgc_gazebo_media_camera.so"/>' in launch
+assert "media_plugin_filename:=$(arg media_plugin_filename)" in launch
 assert "static:=$(arg static)" in launch
 assert '<arg name="snapshot_pose_frame_id" default="world"/>' in launch
 assert "snapshot_pose_frame_id:=$(arg snapshot_pose_frame_id)" in launch
