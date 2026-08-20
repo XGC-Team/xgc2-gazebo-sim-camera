@@ -58,3 +58,25 @@ profiles:
       vbv_buffer_ms: 500
     snapshot:
       jpeg_quality: 90
+
+  # Matches the approximately 90 degree horizontal field of view measured on
+  # the station's focused 1280x720 camera (fx ~= 638 px).  Keeping the exact
+  # field-sized AprilGrid resolvable by the deployed Noetic/OpenCV 4.2 detector
+  # is part of the intrinsic-calibration acceptance contract.
+  calibration_field_720p20_90:
+    image:
+      width_px: 1280
+      height_px: 720
+      frame_rate_hz: 20.0
+    lens:
+      horizontal_fov_degrees: 90.0
+      near_clip_m: 0.10
+      far_clip_m: 100.0
+      gaussian_noise_stddev: 0.0
+    encoder:
+      average_bitrate_bps: 4000000
+      maximum_bitrate_bps: 6000000
+      pacing_bitrate_bps: 12000000
+      vbv_buffer_ms: 500
+    snapshot:
+      jpeg_quality: 90

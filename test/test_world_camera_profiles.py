@@ -54,6 +54,7 @@ class WorldCameraProfilesTest(unittest.TestCase):
                 "world_wide_4k30_110",
                 "world_wide_1080p30_110",
                 "calibration_wide_720p20_110",
+                "calibration_field_720p20_90",
             ],
         )
         world = document["profiles"]["world_wide_4k30_110"]
@@ -70,6 +71,12 @@ class WorldCameraProfilesTest(unittest.TestCase):
         )
         self.assertEqual(preview["image"]["frame_rate_hz"], 30.0)
         self.assertEqual(preview["lens"]["horizontal_fov_degrees"], 110.0)
+        field = document["profiles"]["calibration_field_720p20_90"]
+        self.assertEqual(
+            (field["image"]["width_px"], field["image"]["height_px"]),
+            (1280, 720),
+        )
+        self.assertEqual(field["lens"]["horizontal_fov_degrees"], 90.0)
 
         for name, profile in document["profiles"].items():
             with self.subTest(profile=name):

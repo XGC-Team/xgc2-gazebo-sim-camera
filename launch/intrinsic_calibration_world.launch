@@ -11,7 +11,7 @@
   <arg name="model_name" default="gazebo_static_camera"/>
   <arg name="camera_link_frame" default="usb_cam_link"/>
   <arg name="optical_frame" default="usb_cam_optical_frame"/>
-  <arg name="camera_profile" default="calibration_wide_720p20_110"/>
+  <arg name="camera_profile" default="calibration_field_720p20_90"/>
   <arg name="camera_profiles_file"
        default="$(find gazebo_sim_camera)/config/world_camera_profiles.yaml"/>
   <arg name="width" default="profile"/>
@@ -36,7 +36,7 @@
   <arg name="board_roll" default="0.0"/><arg name="board_pitch" default="0.0"/><arg name="board_yaw" default="0.0"/>
 
   <include file="$(dirname)/static_camera.launch">
-    <arg name="world" value="$(find gazebo_sim_worlds)/worlds/camera_calibration_intrinsic/camera_calibration_intrinsic.world"/>
+    <arg name="world" value="$(find gazebo_sim_worlds)/worlds/camera_calibration_intrinsic_aprilgrid_6x6/camera_calibration_intrinsic_aprilgrid_6x6.world"/>
     <arg name="paused" value="$(arg paused)"/>
     <arg name="gui" value="$(arg gui)"/>
     <arg name="keyboard_gui" value="$(arg keyboard_teleop)"/>
@@ -68,8 +68,8 @@
     <arg name="mode" value="truth"/><arg name="publish_truth_tf" value="true"/>
   </include>
 
-  <!-- The checkerboard (model://checkerboard_8x6) is composed into the shared
-       camera_calibration_intrinsic world; no separate spawn is needed. -->
+  <!-- The field-matched AprilGrid is composed into the shared intrinsic world;
+       no separate target spawn is needed. -->
 
   <node if="$(arg keyboard_teleop)" pkg="gazebo_sim_camera"
         type="keyboard_camera_teleop.py" name="gazebo_camera_keyboard_teleop"

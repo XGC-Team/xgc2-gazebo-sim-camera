@@ -72,6 +72,7 @@ per-instance launch parameters.
 | --- | --- | --- | --- |
 | `world_wide_4k30_110` (default) | 3840×2160 at 30 fps | 110° | 24 / 36 / 72 Mbit/s |
 | `calibration_wide_720p20_110` | 1280×720 at 20 fps | 110° | 4 / 6 / 12 Mbit/s |
+| `calibration_field_720p20_90` | 1280×720 at 20 fps | 90° | 4 / 6 / 12 Mbit/s |
 
 Select a complete parameter group with:
 
@@ -80,7 +81,7 @@ roslaunch gazebo_sim_camera static_camera.launch \
   camera_profile:=world_wide_4k30_110 gui:=true
 
 roslaunch gazebo_sim_camera static_camera.launch \
-  camera_profile:=calibration_wide_720p20_110 gui:=true
+  camera_profile:=calibration_field_720p20_90 gui:=true
 ```
 
 For direct developer launches, `width`, `height`, `fps`, `hfov_degrees`,
@@ -88,8 +89,9 @@ clipping, noise, bitrate, VBV, and JPEG-quality arguments are explicit
 overrides. Their default value is the sentinel `profile`; `hfov_degrees` is
 converted to radians inside the xacro contract and there is no radians-based
 alias. The managed ProcessDefinition exposes only `cameraProfile`, so
-production workflows cannot assemble an incoherent partial profile or override
-the deployed 110° lens.
+production workflows cannot assemble an incoherent partial profile. The
+intrinsic Experiment selects the 90° field profile, whose ideal fx=640 px at
+1280 width closely reproduces the focused station camera (measured fx≈638 px).
 
 Gazebo Classic interprets `horizontal_fov` as radians, so the profile keeps FOV
 in human-readable degrees and xacro converts it. The 110° profile is an ideal
@@ -135,18 +137,25 @@ through the same `static_camera.launch` workflow:
 
 ```bash
 roslaunch gazebo_sim_camera intrinsic_calibration_world.launch \
-  camera_profile:=calibration_wide_720p20_110 gui:=true
+  camera_profile:=calibration_field_720p20_90 gui:=true
 
 roslaunch gazebo_sim_camera extrinsic_calibration_world.launch \
   camera_profile:=calibration_wide_720p20_110 \
   mode:=calibration publish_truth_tf:=false
 ```
 
-The intrinsic scene composes `model://checkerboard_8x6`; the extrinsic scene
+The intrinsic scene composes the field-matched
+`model://aprilgrid_6x6_tag36h11_88mm`: IDs 0–35, 88 mm tags and 26.4 mm gaps,
+generated from Kalibr's official AprilGrid exporter. The extrinsic scene
 composes the six `model://cal_marker_*` assets and can start the shared VRPN
 bridge. The intrinsic launch spawns the camera with `static:=false` and gravity
 disabled, allowing `/gazebo/set_model_state` and the keyboard teleop to move it.
 The standalone launch defaults to `static:=true`.
+
+This is a separate world from the retained 8×6 checkerboard scene. Use
+`camera_calibration_intrinsic_aprilgrid_6x6` for the station's field-matched
+experiment and `camera_calibration_intrinsic` when explicitly testing the older
+checkerboard target.
 
 Keyboard controls use a drone Mode 2 layout:
 
