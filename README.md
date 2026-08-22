@@ -198,7 +198,7 @@ catkin_test_results
 ```
 
 The packaged calibration page is a deterministic React build consuming the
-immutable `@xgc2/ui-react` `0.15.4` release for its shell, single-title topbar,
+immutable `@xgc2/ui-react` `0.15.8` release for its shell, single-title topbar,
 themes, panels, controls, feedback, progress, code results, responsive layout,
 and scrollbars. Gazebo transport and the interactive sample-guide canvas remain
 product-specific. CI and release jobs rebuild `web/app.js` and `web/style.css`
