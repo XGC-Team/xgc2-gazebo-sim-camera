@@ -8,6 +8,7 @@
 // snapshot transaction received over a private Unix-domain socket.
 
 #include "fresh_render_gate.h"
+#include "unix_control_socket.h"
 
 #include <gazebo/common/Console.hh>
 #include <gazebo/common/Events.hh>
@@ -337,10 +338,13 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
         1,
         128));
 
+    if (!gazebo_sim_camera::IsXgc2PrivateMediaSocketPath(controlSocketPath_)) {
+      gzerr << "xgc_media_camera control socket must be under an XGC2 private media runtime root\n";
+      return;
+    }
     if (!IsSafeIdentifier(sourceID_) || frameID_.empty() ||
         snapshotPoseFrameID_.empty() || rtpPort_ < 1 || rtpPort_ > 65535 ||
-        (rtpHost_ != "127.0.0.1" && rtpHost_ != "localhost") ||
-        controlSocketPath_.rfind("/tmp/xgc2/media/", 0) != 0 || bitrate_ < 128'000 ||
+        (rtpHost_ != "127.0.0.1" && rtpHost_ != "localhost") || bitrate_ < 128'000 ||
         (rosPublishingEnabled_ &&
          (rosVideoTopic_.empty() || rosFrameTimingTopic_.empty() ||
           rosStreamInfoTopic_.empty()))) {
@@ -1054,32 +1058,11 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
   }
 
   bool StartControlServer() {
-    std::error_code error;
-    const std::filesystem::path path(controlSocketPath_);
-    std::filesystem::create_directories(path.parent_path(), error);
-    if (error) {
-      gzerr << "xgc_media_camera cannot create control socket directory: " << error.message() << "\n";
-      return false;
-    }
-    if (controlSocketPath_.size() >= sizeof(sockaddr_un::sun_path)) {
-      gzerr << "xgc_media_camera control socket path is too long\n";
-      return false;
-    }
-    std::filesystem::remove(path, error);
-    controlListener_ = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    std::string error;
+    controlListener_ = gazebo_sim_camera::BindAndListenUnixControlSocket(
+        controlSocketPath_, &error);
     if (controlListener_ < 0) {
-      gzerr << "xgc_media_camera cannot create control socket: " << std::strerror(errno) << "\n";
-      return false;
-    }
-    sockaddr_un address{};
-    address.sun_family = AF_UNIX;
-    std::strncpy(address.sun_path, controlSocketPath_.c_str(), sizeof(address.sun_path) - 1);
-    if (bind(controlListener_, reinterpret_cast<const sockaddr *>(&address), sizeof(address)) != 0 ||
-        listen(controlListener_, 8) != 0 || chmod(controlSocketPath_.c_str(), 0600) != 0) {
-      gzerr << "xgc_media_camera cannot bind control socket " << controlSocketPath_ << ": " << std::strerror(errno) << "\n";
-      close(controlListener_);
-      controlListener_ = -1;
-      std::filesystem::remove(path, error);
+      gzerr << "xgc_media_camera " << error << "\n";
       return false;
     }
     controlThread_ = std::thread(&XGCMediaCameraPlugin::ControlLoop, this);
@@ -1100,15 +1083,14 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     snapshotCondition_.notify_all();
     if (controlListener_ >= 0) {
       shutdown(controlListener_, SHUT_RDWR);
-      close(controlListener_);
-      controlListener_ = -1;
     }
     if (controlThread_.joinable()) {
       controlThread_.join();
     }
-    std::error_code error;
-    if (!controlSocketPath_.empty()) {
-      std::filesystem::remove(controlSocketPath_, error);
+    const std::string leftover = gazebo_sim_camera::CloseListeningUnixControlSocket(
+        &controlListener_, controlSocketPath_);
+    if (!leftover.empty()) {
+      gzwarn << "xgc_media_camera " << leftover << "\n";
     }
   }
 

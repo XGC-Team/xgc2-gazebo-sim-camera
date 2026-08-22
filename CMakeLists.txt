@@ -73,6 +73,15 @@ if(CATKIN_ENABLE_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
   endif()
+  catkin_add_gtest(test_unix_control_socket
+    test/test_unix_control_socket.cpp
+  )
+  if(TARGET test_unix_control_socket)
+    target_compile_features(test_unix_control_socket PRIVATE cxx_std_17)
+    target_include_directories(test_unix_control_socket PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+  endif()
   catkin_add_nosetests(test/test_intrinsic_sweep.py)
   catkin_add_nosetests(test/test_keyboard_camera_teleop.py)
   catkin_add_nosetests(test/test_web_calibration.py)
