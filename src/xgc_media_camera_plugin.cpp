@@ -1188,7 +1188,7 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
           << ",\"frameId\":\"" << EscapeJSON(frameID_)
           << "\",\"timestampClockDomain\":\""
           << kSourceTimestampClockDomain
-          << "\",\"capabilities\":[\"set-active\",\"request-keyframe\",\"snapshot\"]}\n";
+          << "\",\"capabilities\":[\"set-active\",\"request-keyframe\",\"snapshot\",\"fresh-snapshot\"]}\n";
     const std::string encoded = reply.str();
     SendAll(client, encoded.data(), encoded.size());
   }

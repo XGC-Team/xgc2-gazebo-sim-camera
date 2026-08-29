@@ -154,6 +154,7 @@ assert "input_camera_info_topic" not in launch
 assert "_configured_intrinsics()" in camera_contract
 assert '"includeRgb": False' in camera_contract
 assert '"requestKeyframe": False' in camera_contract
+assert "fresh-snapshot" in media_plugin
 assert 'rospy.get_param("~enable_continuous_jpeg_preview", False)' in camera_contract
 assert "self._image_timer = None" in camera_contract
 assert "if self._continuous_jpeg_preview:" in camera_contract
