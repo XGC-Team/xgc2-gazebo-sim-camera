@@ -232,6 +232,7 @@ class CameraContractTest(unittest.TestCase):
                     "set-active",
                     "request-keyframe",
                     "snapshot",
+                    "fresh-snapshot",
                 ],
             },
         )
