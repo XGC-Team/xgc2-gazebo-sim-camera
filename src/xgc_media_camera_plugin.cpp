@@ -1909,10 +1909,13 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     }
     // The source and destination stay entirely on the GPU. GL's framebuffer
     // coordinate convention also keeps this copy aligned with the OGRE pixel
-    // readback used by the snapshot transaction.
+    // readback used by the snapshot transaction. NVENC's registered-resource
+    // map does not guarantee it waits for an unrelated GL blit submitted with
+    // glFlush, so finish the copy before mapping; otherwise WebRTC remains one
+    // rendered frame behind the snapshot/annotation path.
     glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glFlush();
+    glFinish();
     if (glGetError() != GL_NO_ERROR) {
       LogEncoderError("OpenGL GPU texture copy for NVENC failed");
       return false;
