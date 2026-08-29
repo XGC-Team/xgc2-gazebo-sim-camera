@@ -25,7 +25,6 @@
   <arg name="frame_timing_topic" default="/xgc/camera/world/frame_timing"/>
   <arg name="stream_info_topic" default="/xgc/camera/world/stream_info"/>
   <arg name="encoded_publisher_queue_capacity" default="8"/>
-  <arg name="enable_continuous_jpeg_preview" default="false"/>
   <arg name="media_bitrate" default="profile"/>
   <arg name="media_max_bitrate" default="profile"/>
   <arg name="media_pacing_bitrate" default="profile"/>
@@ -57,8 +56,6 @@
     <arg name="stream_info_topic" value="$(arg stream_info_topic)"/>
     <arg name="encoded_publisher_queue_capacity"
          value="$(arg encoded_publisher_queue_capacity)"/>
-    <arg name="enable_continuous_jpeg_preview"
-         value="$(arg enable_continuous_jpeg_preview)"/>
     <arg name="media_bitrate" value="$(arg media_bitrate)"/>
     <arg name="media_max_bitrate" value="$(arg media_max_bitrate)"/>
     <arg name="media_pacing_bitrate" value="$(arg media_pacing_bitrate)"/>

@@ -3,89 +3,87 @@
 
 The world-camera product owns this contract. It publishes the explicitly
 selected intrinsic calibration and the frozen simulation extrinsics.
-Periodic JPEG snapshot polling is a disabled-by-default compatibility mode;
-live and recorded video uses the source plugin's encoded H264 topics.
+Live and recorded video uses the source plugin's encoded H264 topics. Explicit
+still-image capture uses the plugin's source-control snapshot transaction.
 """
 
-import json
 import math
-import socket
-import threading
+import re
 from pathlib import Path
 
 import rospy
 from geometry_msgs.msg import TransformStamped
-from sensor_msgs.msg import CameraInfo, CompressedImage
+from sensor_msgs.msg import CameraInfo
 from tf.transformations import quaternion_from_euler
 from tf2_msgs.msg import TFMessage
 import yaml
 
 
-_MAX_CONTROL_HEADER_BYTES = 64 * 1024
-
-
-def _receive_line(connection):
-    data = bytearray()
-    while True:
-        chunk = connection.recv(4096)
-        if not chunk:
-            raise RuntimeError("media source closed before its response header")
-        newline = chunk.find(b"\n")
-        if newline >= 0:
-            data.extend(chunk[:newline])
-            return bytes(data), chunk[newline + 1 :]
-        data.extend(chunk)
-        if len(data) > _MAX_CONTROL_HEADER_BYTES:
-            raise RuntimeError("media source response header is too large")
-
-
-def _receive_exact(connection, size, initial=b""):
-    data = bytearray(initial)
-    if len(data) > size:
-        del data[size:]
-    while len(data) < size:
-        chunk = connection.recv(min(65536, size - len(data)))
-        if not chunk:
-            raise RuntimeError("media source closed before its JPEG payload")
-        data.extend(chunk)
-    return bytes(data)
+_CAMERA_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,63}$")
+_INTRINSIC_NAME_PATTERN = re.compile(
+    r"intrinsics-\d{8}T\d{6}\.\d{6}Z\.yaml"
+)
 
 
 def _profile_value(argument, fallback, convert):
     return convert(fallback if str(argument) == "profile" else argument)
 
 
-def _boolean(value):
-    if isinstance(value, bool):
-        return value
-    normalized = str(value).strip().lower()
-    if normalized in ("1", "true", "yes", "on"):
-        return True
-    if normalized in ("0", "false", "no", "off"):
-        return False
-    raise ValueError("expected a boolean value")
+def _stable_camera_name(value):
+    camera_name = str(value).strip()
+    if not _CAMERA_NAME_PATTERN.fullmatch(camera_name):
+        raise ValueError(
+            "camera_name must match ^[A-Za-z][A-Za-z0-9._-]{0,63}$"
+        )
+    return camera_name
 
 
-def _selected_intrinsics(path_value, configured_size):
+def _matrix_data(document, field, expected_rows, expected_cols=None, minimum_cols=None):
+    matrix = document.get(field)
+    if not isinstance(matrix, dict):
+        raise ValueError("intrinsic_file {} must be a matrix object".format(field))
+    rows = matrix.get("rows")
+    cols = matrix.get("cols")
+    data = matrix.get("data")
+    if rows != expected_rows:
+        raise ValueError("intrinsic_file {} has invalid rows".format(field))
+    if expected_cols is not None and cols != expected_cols:
+        raise ValueError("intrinsic_file {} has invalid cols".format(field))
+    if minimum_cols is not None and (not isinstance(cols, int) or cols < minimum_cols):
+        raise ValueError("intrinsic_file {} has too few columns".format(field))
+    if not isinstance(data, list) or len(data) != rows * cols:
+        raise ValueError("intrinsic_file {} data length does not match rows/cols".format(field))
+    values = [float(value) for value in data]
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("intrinsic_file {} contains non-finite values".format(field))
+    return values
+
+
+def _selected_intrinsics(path_value, configured_size, camera_name):
+    camera_name = _stable_camera_name(camera_name)
     path = Path(str(path_value).strip()).expanduser()
     if not path.is_absolute():
         raise ValueError("intrinsic_file must be an absolute YAML file path")
+    try:
+        path = path.resolve(strict=True)
+    except OSError as error:
+        raise ValueError("intrinsic_file must resolve to an existing YAML file") from error
+    if (
+        path.parent.parent.name != "sim"
+        or path.parent.name != camera_name
+        or not _INTRINSIC_NAME_PATTERN.fullmatch(path.name)
+    ):
+        raise ValueError(
+            "intrinsic_file must be a concrete timestamped file under <root>/sim/<camera_name>/"
+        )
     with path.open("r", encoding="utf-8") as stream:
         document = yaml.safe_load(stream) or {}
     if not isinstance(document, dict) or document.get("schema") != "xgc2.camera.intrinsic.v1":
         raise ValueError("intrinsic_file must contain an xgc2.camera.intrinsic.v1 document")
-    matrix = document.get("camera_matrix", {})
-    distortion = document.get("distortion_coefficients", {})
-    matrix_data = matrix.get("data") if isinstance(matrix, dict) else None
-    distortion_data = distortion.get("data") if isinstance(distortion, dict) else None
+    if str(document.get("camera_name", "")).strip() != camera_name:
+        raise ValueError("intrinsic_file camera_name must match the configured camera_name")
     width = int(document.get("image_width", 0))
     height = int(document.get("image_height", 0))
-    if not isinstance(matrix_data, list) or len(matrix_data) != 9:
-        raise ValueError("intrinsic_file camera_matrix.data must contain nine values")
-    if not isinstance(distortion_data, list) or len(distortion_data) < 4:
-        raise ValueError(
-            "intrinsic_file distortion_coefficients.data must contain at least four values"
-        )
     if (width, height) != configured_size:
         raise ValueError(
             "intrinsic_file is {}x{}, but the configured camera is {}x{}".format(
@@ -95,10 +93,13 @@ def _selected_intrinsics(path_value, configured_size):
                 configured_size[1],
             )
         )
-    values = [float(value) for value in matrix_data + distortion_data]
-    if not all(math.isfinite(value) for value in values):
-        raise ValueError("intrinsic_file contains non-finite calibration values")
-    return [float(value) for value in matrix_data], [float(value) for value in distortion_data]
+    camera_matrix = _matrix_data(document, "camera_matrix", 3, expected_cols=3)
+    distortion = _matrix_data(
+        document, "distortion_coefficients", 1, minimum_cols=4
+    )
+    _matrix_data(document, "rectification_matrix", 3, expected_cols=3)
+    _matrix_data(document, "projection_matrix", 3, expected_cols=4)
+    return camera_matrix, distortion
 
 
 def _configured_intrinsics():
@@ -149,10 +150,12 @@ def _configured_intrinsics():
         1.0,
     ]
     intrinsic_file = str(rospy.get_param("~intrinsic_file", "")).strip()
+    camera_name = _stable_camera_name(rospy.get_param("~camera_name", "usb_cam"))
     if intrinsic_file:
         camera_matrix, distortion = _selected_intrinsics(
             intrinsic_file,
             (width, height),
+            camera_name,
         )
     else:
         distortion = [0.0] * 5
@@ -177,28 +180,17 @@ def _transform(parent, child, translation, rotation, stamp):
 class CameraContractPublisher:
     def __init__(self):
         self._optical_frame = rospy.get_param("~optical_frame")
-        self._media_control_socket = rospy.get_param("~media_control_socket")
-        self._snapshot_timeout = float(rospy.get_param("~snapshot_timeout", 5.0))
-        if self._snapshot_timeout <= 0.0:
-            raise ValueError("snapshot_timeout must be positive")
         (
             self._width,
             self._height,
             self._camera_matrix,
             self._distortion,
         ) = _configured_intrinsics()
-        self._snapshot_sequence = 0
-        self._snapshot_lock = threading.Lock()
         self._camera_info_publisher = rospy.Publisher(
             rospy.get_param("~output_camera_info_topic"),
             CameraInfo,
             queue_size=1,
             latch=True,
-        )
-        self._image_publisher = rospy.Publisher(
-            rospy.get_param("~output_compressed_image_topic"),
-            CompressedImage,
-            queue_size=1,
         )
         self._transform_publisher = rospy.Publisher(
             rospy.get_param("~output_transform_topic"),
@@ -228,18 +220,6 @@ class CameraContractPublisher:
             rospy.Duration(1.0 / transform_rate),
             self._publish_transforms,
         )
-        self._image_timer = None
-        self._continuous_jpeg_preview = _boolean(
-            rospy.get_param("~enable_continuous_jpeg_preview", False)
-        )
-        if self._continuous_jpeg_preview:
-            image_rate = float(rospy.get_param("~image_publish_rate", 10.0))
-            if image_rate <= 0.0:
-                raise ValueError("image_publish_rate must be positive")
-            self._image_timer = rospy.Timer(
-                rospy.Duration(1.0 / image_rate),
-                self._publish_media_snapshot,
-            )
         # CameraInfo comes from the selected calibration file when supplied;
         # it is never inferred from image transport metadata.
         self._publish_camera_info(rospy.Time.now())
@@ -274,85 +254,6 @@ class CameraContractPublisher:
             0.0,
         ]
         self._camera_info_publisher.publish(output)
-
-    def _publish_media_snapshot(self, _event=None):
-        # Foxglove subscribes only when an Image/AR view needs this topic.
-        if self._image_publisher.get_num_connections() == 0:
-            return
-        if not self._snapshot_lock.acquire(False):
-            return
-        try:
-            self._snapshot_sequence += 1
-            request = {
-                "operation": "snapshot",
-                "snapshotId": "xgc-contract-{}".format(self._snapshot_sequence),
-                "includeRgb": False,
-                "requestKeyframe": False,
-            }
-            connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            connection.settimeout(self._snapshot_timeout)
-            try:
-                connection.connect(self._media_control_socket)
-                connection.sendall(
-                    json.dumps(request, separators=(",", ":")).encode("utf-8")
-                    + b"\n"
-                )
-                encoded_header, payload_prefix = _receive_line(connection)
-                header = json.loads(encoded_header.decode("utf-8"))
-                if not header.get("ok"):
-                    raise RuntimeError(
-                        header.get("error", "media snapshot request failed")
-                    )
-                jpeg_size = int(header["jpegBytes"])
-                rgb_size = int(header["rgbBytes"])
-                if jpeg_size <= 0 or rgb_size < 0:
-                    raise RuntimeError("media source returned an invalid JPEG contract")
-                # A gzserver that was already running when this product was
-                # upgraded may still have the previous plugin mapped. It
-                # ignores includeRgb=false and appends RGB. Consume that
-                # backward-compatible payload but publish only its JPEG.
-                payload = _receive_exact(
-                    connection,
-                    jpeg_size + rgb_size,
-                    payload_prefix,
-                )
-                jpeg = payload[:jpeg_size]
-            finally:
-                connection.close()
-
-            width = int(header["width"])
-            height = int(header["height"])
-            if (width, height) != (self._width, self._height):
-                raise RuntimeError(
-                    "media dimensions {}x{} do not match configured intrinsics {}x{}".format(
-                        width,
-                        height,
-                        self._width,
-                        self._height,
-                    )
-                )
-            timestamp_nanoseconds = int(header["timestampNanoseconds"])
-            stamp = rospy.Time(
-                timestamp_nanoseconds // 1000000000,
-                timestamp_nanoseconds % 1000000000,
-            )
-            output = CompressedImage()
-            output.header.stamp = stamp
-            output.header.frame_id = self._optical_frame
-            output.format = "jpeg"
-            output.data = jpeg
-            self._image_publisher.publish(output)
-            # Keep the latched startup truth, and also stamp calibration in the
-            # source clock domain for clients that synchronize image/info.
-            self._publish_camera_info(stamp)
-        except (KeyError, TypeError, ValueError, OSError, RuntimeError) as error:
-            rospy.logwarn_throttle(
-                2.0,
-                "XGC world-camera image contract is waiting for its media source: %s",
-                error,
-            )
-        finally:
-            self._snapshot_lock.release()
 
     def _publish_transforms(self, _event=None):
         stamp = rospy.Time.now()

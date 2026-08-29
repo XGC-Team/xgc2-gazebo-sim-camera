@@ -114,6 +114,7 @@ install(DIRECTORY
 
 if(CATKIN_ENABLE_TESTING)
   find_package(rostest REQUIRED)
+  catkin_add_nosetests(test/test_camera_intrinsic_selection.py)
   add_library(test_snapshot_jpeg_hardware_plugin SHARED
     test/fake_snapshot_jpeg_hardware.cpp
   )

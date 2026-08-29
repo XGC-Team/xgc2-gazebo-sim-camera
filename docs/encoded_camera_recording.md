@@ -108,16 +108,6 @@ declare `timestampClockDomain: "simulation"`; `timestampNanoseconds` is
 therefore directly comparable with the encoded-frame source timestamp and ROS
 simulation observations, not with Unix wall time.
 
-The historical timer that repeatedly calls this transaction to populate
-`/xgc/camera/world/image_raw/compressed` is disabled by default because it
-forces GPU readback and JPEG encoding. Temporarily enable it for an older
-consumer with:
-
-```bash
-roslaunch gazebo_sim_camera static_camera.launch \
-  enable_continuous_jpeg_preview:=true \
-  xgc_image_publish_rate:=10
-```
-
-Automated capture workflows should invoke explicit `snapshot` transactions at
-their event or sampling boundary instead of enabling periodic JPEG polling.
+There is no periodic ROS JPEG polling path. Automated capture workflows invoke
+explicit `snapshot` transactions at their event or sampling boundary, while
+continuous consumers use the encoded H264 stream.

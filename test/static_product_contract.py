@@ -116,8 +116,9 @@ assert "static:=$(arg static)" in launch
 assert '<arg name="snapshot_pose_frame_id" default="world"/>' in launch
 assert "snapshot_pose_frame_id:=$(arg snapshot_pose_frame_id)" in launch
 assert '<arg name="publish_encoded_video" default="true"/>' in launch
-assert '<arg name="enable_continuous_jpeg_preview" default="false"/>' in launch
-assert 'name="enable_continuous_jpeg_preview"' in launch
+assert "enable_continuous_jpeg_preview" not in launch
+assert "xgc_compressed_image_topic" not in launch
+assert "output_compressed_image_topic" not in launch
 assert 'name="xgc_camera_link_frame"' not in launch
 assert 'name="xgc_optical_frame"' not in launch
 assert '<param name="camera_link_frame" value="$(arg camera_link_frame)"/>' in launch
@@ -131,7 +132,7 @@ for calibration_launch in (intrinsic, extrinsic):
     assert '<arg name="camera_profiles_file" value="$(arg camera_profiles_file)"/>' in calibration_launch
     assert '<arg name="publish_encoded_video" default="true"/>' in calibration_launch
     assert '<arg name="publish_encoded_video" value="$(arg publish_encoded_video)"/>' in calibration_launch
-    assert '<arg name="enable_continuous_jpeg_preview" default="false"/>' in calibration_launch
+    assert "enable_continuous_jpeg_preview" not in calibration_launch
 
 assert '<arg name="static" value="$(arg camera_static)"/>' in intrinsic
 assert "--gui-client-plugin libKeyboardGUIPlugin.so" in launch
@@ -147,13 +148,20 @@ assert 'rospy.init_node("camera_lifecycle_keepalive")' in keepalive
 assert "rospy.spin()" in keepalive
 assert "scripts/camera_lifecycle_keepalive.py" in cmake
 assert "test_unix_control_socket" in cmake
-assert 'name="media_control_socket" value="$(arg media_control_socket)"' in launch
+assert "media_control_socket:=$(arg media_control_socket)" in launch
 assert 'name="camera_profile" value="$(arg camera_profile)"' in launch
+assert '<arg name="camera_name" default="usb_cam"/>' in launch
+assert 'name="camera_name" value="$(arg camera_name)"' in launch
 assert "input_compressed_image_topic" not in launch
 assert "input_camera_info_topic" not in launch
 assert "_configured_intrinsics()" in camera_contract
-assert '"includeRgb": False' in camera_contract
-assert '"requestKeyframe": False' in camera_contract
+assert "intrinsics-\\d{8}T\\d{6}\\.\\d{6}Z\\.yaml" in camera_contract
+assert 'path.parent.parent.name != "sim"' in camera_contract
+assert 'document.get("camera_name", "")' in camera_contract
+assert "_CAMERA_NAME_PATTERN.fullmatch(camera_name)" in camera_contract
+assert "path.parent.name != camera_name" in camera_contract
+assert 'JSONBoolean(*request, "includeRgb")' in media_plugin
+assert 'JSONBoolean(*request, "requestKeyframe")' in media_plugin
 assert "fresh-snapshot" in media_plugin
 assert 'SDFValue<std::string>(sdf, "snapshotJpegBackend", "auto")' in media_plugin
 assert "ParseSnapshotJpegPolicy" in media_plugin
@@ -169,9 +177,8 @@ hardware_contract = (root / "test/static_camera_hardware_contract.test").read_te
 assert '<arg name="snapshot_jpeg_backend" value="hardware"/>' in hardware_contract
 assert '<param name="expected_jpeg_backend" value="nvjpeg-cuda"/>' in hardware_contract
 assert '<param name="expect_jpeg_fallback" value="false"/>' in hardware_contract
-assert 'rospy.get_param("~enable_continuous_jpeg_preview", False)' in camera_contract
-assert "self._image_timer = None" in camera_contract
-assert "if self._continuous_jpeg_preview:" in camera_contract
+assert "CompressedImage" not in camera_contract
+assert "_publish_media_snapshot" not in camera_contract
 assert "self._publish_camera_info(rospy.Time.now())" in camera_contract
 assert "0.0, 0.0, 1.0," in camera_contract
 assert "(0.067, 0.0, 0.0)" in camera_contract

@@ -66,10 +66,9 @@ the current profile); the main plugin and CPU/Mesa package keep zero CUDA
 linkage. RTX uses the CUDA implementation and is reported as `nvjpeg-cuda`,
 not fixed-function JPEG hardware. Jetson hardware encode requires a separate
 JetPack/Thor backend gate.
-The older ROS JPEG preview topic is compatibility-only and its continuous
-snapshot timer is disabled by default; set
-`enable_continuous_jpeg_preview:=true` only for a consumer that still requires
-it.
+ROS consumers use the encoded H264 and CameraInfo topics. Full-resolution still
+images are explicit source-control snapshot transactions; there is no periodic
+ROS JPEG polling path.
 
 The default instance uses:
 
