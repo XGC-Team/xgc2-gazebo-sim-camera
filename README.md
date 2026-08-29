@@ -71,8 +71,6 @@ per-instance launch parameters.
 | Profile | Image | Horizontal FOV | H264 average / max / pacing |
 | --- | --- | --- | --- |
 | `world_wide_4k30_110` (default) | 3840×2160 at 30 fps | 110° | 24 / 36 / 72 Mbit/s |
-| `calibration_wide_720p20_110` | 1280×720 at 20 fps | 110° | 4 / 6 / 12 Mbit/s |
-| `calibration_field_720p20_90` | 1280×720 at 20 fps | 90° | 4 / 6 / 12 Mbit/s |
 
 Select a complete parameter group with:
 
@@ -81,7 +79,7 @@ roslaunch gazebo_sim_camera static_camera.launch \
   camera_profile:=world_wide_4k30_110 gui:=true
 
 roslaunch gazebo_sim_camera static_camera.launch \
-  camera_profile:=calibration_field_720p20_90 gui:=true
+  camera_profile:=world_wide_4k30_110 gui:=true
 ```
 
 For direct developer launches, `width`, `height`, `fps`, `hfov_degrees`,
@@ -137,10 +135,10 @@ through the same `static_camera.launch` workflow:
 
 ```bash
 roslaunch gazebo_sim_camera intrinsic_calibration_world.launch \
-  camera_profile:=calibration_field_720p20_90 gui:=true
+  camera_profile:=world_wide_4k30_110 gui:=true
 
 roslaunch gazebo_sim_camera extrinsic_calibration_world.launch \
-  camera_profile:=calibration_wide_720p20_110 \
+  camera_profile:=world_wide_4k30_110 \
   mode:=calibration publish_truth_tf:=false
 ```
 

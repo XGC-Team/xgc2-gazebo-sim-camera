@@ -5,7 +5,7 @@
     <arg name="model_name" value="gazebo_static_camera_contract"/>
     <arg name="camera_link_frame" value="contract_camera_link"/>
     <arg name="optical_frame" value="contract_camera_optical_frame"/>
-    <arg name="camera_profile" value="calibration_wide_720p20_110"/>
+    <arg name="camera_profile" value="world_wide_4k30_110"/>
     <arg name="media_source_id" value="contract_camera"/>
     <arg name="media_rtp_port" value="15004"/>
     <arg name="media_control_socket" value="/tmp/xgc2/media/contract_camera.sock"/>

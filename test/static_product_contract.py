@@ -33,12 +33,7 @@ profiles = yaml.safe_load(
 
 assert profiles["schema_version"] == 1
 assert profiles["default_profile"] == "world_wide_4k30_110"
-assert list(profiles["profiles"]) == [
-    "world_wide_4k30_110",
-    "world_wide_1080p30_110",
-    "calibration_wide_720p20_110",
-    "calibration_field_720p20_90",
-]
+assert list(profiles["profiles"]) == ["world_wide_4k30_110"]
 for profile in profiles["profiles"].values():
     assert profile["lens"]["near_clip_m"] > 0.065
 assert "optical_origin_x" in xacro
@@ -72,7 +67,7 @@ assert "rosFreshRenderGeneration_.fetch_add(1);" in media_plugin
 assert {
     profile["lens"]["horizontal_fov_degrees"]
     for profile in profiles["profiles"].values()
-} == {90.0, 110.0}
+} == {110.0}
 
 assert "<gazebo><static>true</static></gazebo>" in xacro
 assert '<xacro:arg name="static" default="true"/>' in xacro
@@ -128,7 +123,7 @@ assert 'name="xgc_optical_frame"' not in launch
 assert '<param name="camera_link_frame" value="$(arg camera_link_frame)"/>' in launch
 assert '<param name="optical_frame" value="$(arg optical_frame)"/>' in launch
 
-assert 'name="camera_profile" default="calibration_field_720p20_90"' in intrinsic
+assert 'name="camera_profile" default="world_wide_4k30_110"' in intrinsic
 assert 'name="camera_profile" default="world_wide_4k30_110"' in extrinsic
 for calibration_launch in (intrinsic, extrinsic):
     assert '<arg name="hfov"' not in calibration_launch

@@ -50,12 +50,7 @@ class WorldCameraProfilesTest(unittest.TestCase):
         self.assertEqual(document["default_profile"], "world_wide_4k30_110")
         self.assertEqual(
             list(document["profiles"]),
-            [
-                "world_wide_4k30_110",
-                "world_wide_1080p30_110",
-                "calibration_wide_720p20_110",
-                "calibration_field_720p20_90",
-            ],
+            ["world_wide_4k30_110"],
         )
         world = document["profiles"]["world_wide_4k30_110"]
         self.assertEqual(
@@ -64,20 +59,6 @@ class WorldCameraProfilesTest(unittest.TestCase):
         )
         self.assertEqual(world["image"]["frame_rate_hz"], 30.0)
         self.assertEqual(world["lens"]["horizontal_fov_degrees"], 110.0)
-        preview = document["profiles"]["world_wide_1080p30_110"]
-        self.assertEqual(
-            (preview["image"]["width_px"], preview["image"]["height_px"]),
-            (1920, 1080),
-        )
-        self.assertEqual(preview["image"]["frame_rate_hz"], 30.0)
-        self.assertEqual(preview["lens"]["horizontal_fov_degrees"], 110.0)
-        field = document["profiles"]["calibration_field_720p20_90"]
-        self.assertEqual(
-            (field["image"]["width_px"], field["image"]["height_px"]),
-            (1280, 720),
-        )
-        self.assertEqual(field["lens"]["horizontal_fov_degrees"], 90.0)
-
         for name, profile in document["profiles"].items():
             with self.subTest(profile=name):
                 self.assertEqual(set(profile), EXPECTED_PROFILE_KEYS)
@@ -190,7 +171,7 @@ class WorldCameraProfilesTest(unittest.TestCase):
     def test_explicit_launch_overrides_win_without_changing_the_selected_profile(self):
         sensor = sensor_from(
             expand_profile(
-                "calibration_wide_720p20_110",
+                "world_wide_4k30_110",
                 "width:=640",
                 "height:=480",
                 "fps:=10",
@@ -208,11 +189,11 @@ class WorldCameraProfilesTest(unittest.TestCase):
         )
         self.assertEqual(
             sensor.findtext("plugin[@name='xgc_media_camera']/maxBitrate"),
-            "6000000",
+            "36000000",
         )
 
     def test_sensor_pinhole_sits_past_the_black_lens(self):
-        sensor = sensor_from(expand_profile("world_wide_1080p30_110"))
+        sensor = sensor_from(expand_profile("world_wide_4k30_110"))
         pose = sensor.findtext("pose")
         self.assertIsNotNone(pose)
         origin_x = float(pose.split()[0])
