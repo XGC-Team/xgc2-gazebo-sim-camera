@@ -132,10 +132,10 @@
   <node if="$(arg publish_xgc_contract)"
         pkg="gazebo_sim_camera" type="camera_contract_publisher.py"
         name="$(arg model_name)_xgc_camera_contract" output="screen" required="true">
-    <!-- This world-camera product owns the complete XGC contract. CameraInfo
-         uses the selected intrinsic YAML when supplied; the profile remains
-         the pre-calibration fallback used by intrinsic capture itself. JPEG
-         frames come from the product media source, never Gazebo ROS topics. -->
+    <!-- This world-camera product owns the XGC CameraInfo/TF contract.
+         CameraInfo uses the selected intrinsic YAML when supplied; the profile
+         remains the pre-calibration fallback used by intrinsic capture itself.
+         Still images are explicit source-control snapshots, not a ROS timer. -->
     <param name="camera_profile" value="$(arg camera_profile)"/>
     <param name="camera_name" value="$(arg camera_name)"/>
     <param name="camera_profiles_file" value="$(arg camera_profiles_file)"/>
