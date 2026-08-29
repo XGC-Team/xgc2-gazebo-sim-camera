@@ -212,6 +212,8 @@ class CameraContractTest(unittest.TestCase):
         # The plugin starts inactive. Describe must report the resolved Gazebo
         # sensor contract without activating rendering or allocating NVENC.
         description = self.request_description(control_socket)
+        self.assertIn("fps", description)
+        self.assertAlmostEqual(description.pop("fps"), fps, delta=1e-4)
         self.assertEqual(
             description,
             {
@@ -225,7 +227,6 @@ class CameraContractTest(unittest.TestCase):
                 "rtpPort": rtp_port,
                 "width": width,
                 "height": height,
-                "fps": fps,
                 "frameId": frame_id,
                 "timestampClockDomain": "simulation",
                 "capabilities": [
