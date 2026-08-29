@@ -33,7 +33,10 @@ profiles = yaml.safe_load(
 
 assert profiles["schema_version"] == 1
 assert profiles["default_profile"] == "world_wide_4k30_110"
-assert list(profiles["profiles"]) == ["world_wide_4k30_110"]
+assert list(profiles["profiles"]) == [
+    "calibration_wide_720p20_110",
+    "world_wide_4k30_110",
+]
 for profile in profiles["profiles"].values():
     assert profile["lens"]["near_clip_m"] > 0.065
 assert "optical_origin_x" in xacro
