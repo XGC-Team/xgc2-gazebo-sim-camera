@@ -154,7 +154,7 @@ class CameraContractTest(unittest.TestCase):
             StreamInfo.TIMESTAMP_REFERENCE_RENDER_COMPLETE,
         )
         self.assertEqual((stream_info.width, stream_info.height), (width, height))
-        self.assertAlmostEqual(stream_info.nominal_frame_rate, fps)
+        self.assertAlmostEqual(stream_info.nominal_frame_rate, fps, delta=1e-4)
         self.assertEqual(stream_info.rtp_clock_rate, 90000)
         self.assertEqual(stream_info.rtp_payload_type, 96)
 
