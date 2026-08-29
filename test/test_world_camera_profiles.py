@@ -50,7 +50,7 @@ class WorldCameraProfilesTest(unittest.TestCase):
         self.assertEqual(document["default_profile"], "world_wide_4k30_110")
         self.assertEqual(
             list(document["profiles"]),
-            ["calibration_wide_720p20_110", "world_wide_4k30_110"],
+            ["world_wide_4k30_110"],
         )
         world = document["profiles"]["world_wide_4k30_110"]
         self.assertEqual(

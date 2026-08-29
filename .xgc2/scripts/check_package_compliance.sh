@@ -52,6 +52,6 @@ for xml in launch/*.launch test/*.test; do xmllint --noout "${xml}"; done
 
 # Verify both a named profile and the advanced per-field compatibility
 # overrides accepted by direct roslaunch users.
-/opt/ros/noetic/bin/xacro urdf/fixed_rgb_camera.urdf.xacro camera_profile:=calibration_wide_720p20_110 >/dev/null
+/opt/ros/noetic/bin/xacro urdf/fixed_rgb_camera.urdf.xacro camera_profile:=world_wide_4k30_110 >/dev/null
 /opt/ros/noetic/bin/xacro urdf/fixed_rgb_camera.urdf.xacro model_name:=test_camera camera_link_frame:=usb_cam_link optical_frame:=usb_cam_optical_frame width:=320 height:=240 fps:=10 hfov_degrees:=110 near_clip:=0.05 far_clip:=20 noise_stddev:=0 >/dev/null
 echo "Package compliance checks passed"
