@@ -4,10 +4,12 @@
 //   OGRE render texture -> OpenGL RGBA texture -> NVENC H264 Annex-B AU.
 // Each AU is fanned out to loopback RTP and a bounded asynchronous ROS
 // publisher queue. ROS serialization and transport never run in the render
-// callback. A CPU RGB/JPEG readback exists only for an explicit calibration
-// snapshot transaction received over a private Unix-domain socket.
+// callback. Explicit calibration snapshots use an asynchronous OpenGL PBO and
+// a depth-one JPEG worker, with the former synchronous RGB readback retained
+// only as the compatibility fallback.
 
 #include "fresh_render_gate.h"
+#include "snapshot_jpeg_backend.h"
 #include "unix_control_socket.h"
 
 #include <gazebo/common/Console.hh>
@@ -29,7 +31,6 @@
 #include <GL/gl.h>
 #include <GL/glext.h>
 
-#include <jpeglib.h>
 #include <ffnvcodec/nvEncodeAPI.h>
 
 #include <foxglove_msgs/CompressedVideo.h>
@@ -47,7 +48,6 @@
 #include <array>
 #include <atomic>
 #include <cerrno>
-#include <csetjmp>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -86,16 +86,6 @@ constexpr std::size_t kMaximumPendingEncodedFrames = 4;
 constexpr std::size_t kMaximumPendingDiagnostics = 64;
 
 using NvEncodeAPICreateInstance = NVENCSTATUS (NVENCAPI *)(NV_ENCODE_API_FUNCTION_LIST *);
-
-struct JPEGErrorManager {
-  jpeg_error_mgr manager;
-  jmp_buf jumpBuffer;
-};
-
-extern "C" void JPEGErrorExit(j_common_ptr info) {
-  auto *error = reinterpret_cast<JPEGErrorManager *>(info->err);
-  longjmp(error->jumpBuffer, 1);
-}
 
 template <typename Value>
 Value SDFValue(const sdf::ElementPtr &sdf, const std::string &name, Value fallback) {
@@ -292,6 +282,7 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     // destroys its listener registry.
     renderTarget_ = nullptr;
     StopControlServer();
+    StopSnapshotEncoder();
     StopROSPublisher();
     StopRTPPacer();
     if (rtpSocket_ >= 0) {
@@ -323,6 +314,33 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     pacingBitrate_ = SDFValue<int>(sdf, "pacingBitrate", maxBitrate_);
     vbvBufferMilliseconds_ = std::clamp(SDFValue<int>(sdf, "vbvBufferMilliseconds", 500), 50, 2'000);
     jpegQuality_ = std::clamp(SDFValue<int>(sdf, "jpegQuality", 90), 50, 100);
+    const std::string snapshotJpegPolicyValue =
+        SDFValue<std::string>(sdf, "snapshotJpegBackend", "auto");
+    const auto snapshotJpegPolicy =
+        gazebo_sim_camera::ParseSnapshotJpegPolicy(snapshotJpegPolicyValue);
+    if (!snapshotJpegPolicy) {
+      gzerr << "xgc_media_camera snapshotJpegBackend must be auto, hardware, or cpu\n";
+      return;
+    }
+    snapshotJpegPolicy_ = *snapshotJpegPolicy;
+    // The portable plugin intentionally has no CUDA dependency. Optional GPU
+    // JPEG support is a versioned C-ABI module; only a successfully created
+    // encoder counts as hardware preflight. NVENC itself cannot encode JPEG.
+    const bool hardwareAvailable =
+        snapshotJpegPolicy_ != gazebo_sim_camera::SnapshotJpegPolicy::kCPU &&
+        snapshotJpegHardware_.Open();
+    snapshotJpegHardwarePreflightError_ = snapshotJpegHardware_.error();
+    snapshotJpegBackend_ = gazebo_sim_camera::SelectSnapshotJpegBackend(
+        snapshotJpegPolicy_, hardwareAvailable,
+        hardwareAvailable ? snapshotJpegHardware_.backend() : "nvjpeg-cuda");
+    if (!snapshotJpegBackend_.available) {
+      gzerr << "xgc_media_camera " << snapshotJpegBackend_.error;
+      if (!snapshotJpegHardwarePreflightError_.empty()) {
+        gzerr << ": " << snapshotJpegHardwarePreflightError_;
+      }
+      gzerr << "\n";
+      return;
+    }
     rosPublishingEnabled_ = SDFValue<bool>(sdf, "rosPublishEnabled", true);
     rosVideoTopic_ = SDFValue<std::string>(
         sdf, "rosVideoTopic", "/xgc/camera/world/video_h264");
@@ -376,7 +394,15 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
       return;
     }
 
+    if (!StartSnapshotEncoder()) {
+      StopRTPPacer();
+      close(rtpSocket_);
+      rtpSocket_ = -1;
+      return;
+    }
+
     if (!StartControlServer()) {
+      StopSnapshotEncoder();
       StopRTPPacer();
       close(rtpSocket_);
       rtpSocket_ = -1;
@@ -384,6 +410,7 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     }
     if (!StartDiagnosticReporter()) {
       StopControlServer();
+      StopSnapshotEncoder();
       StopRTPPacer();
       close(rtpSocket_);
       rtpSocket_ = -1;
@@ -410,7 +437,11 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
         std::bind(&XGCMediaCameraPlugin::OnPostRender, this));
     std::ostringstream startupMessage;
     startupMessage << "xgc_media_camera source " << sourceID_
-                   << " serves H264/RTP through 127.0.0.1:" << rtpPort_;
+                   << " serves H264/RTP through 127.0.0.1:" << rtpPort_
+                   << " and " << snapshotJpegBackend_.backend
+                   << " snapshots (policy "
+                   << gazebo_sim_camera::SnapshotJpegPolicyName(snapshotJpegPolicy_)
+                   << ")";
     if (rosPublishingEnabled_) {
       startupMessage << " and H264/Annex-B on " << rosVideoTopic_;
     }
@@ -421,8 +452,11 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
   struct SnapshotResult {
     bool completed = false;
     bool failed = false;
+    bool captureSubmitted = false;
+    bool includeRGB = true;
     std::string error;
     std::string id;
+    std::uint64_t generation = 0;
     std::int64_t timestampNanoseconds = 0;
     unsigned int width = 0;
     unsigned int height = 0;
@@ -432,6 +466,11 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     std::array<double, 4> renderOrientation{};
     std::string poseFrameID;
     bool renderPoseValid = false;
+    std::string jpegBackend;
+    std::string jpegReadback;
+    std::string jpegFallbackReason;
+    double jpegReadbackMilliseconds = 0.0;
+    double jpegEncodeMilliseconds = 0.0;
     std::vector<std::uint8_t> rgb;
     std::vector<std::uint8_t> jpeg;
   };
@@ -1188,6 +1227,12 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
           << ",\"frameId\":\"" << EscapeJSON(frameID_)
           << "\",\"timestampClockDomain\":\""
           << kSourceTimestampClockDomain
+          << "\",\"snapshotJpegPolicy\":\""
+          << gazebo_sim_camera::SnapshotJpegPolicyName(snapshotJpegPolicy_)
+          << "\",\"snapshotJpegBackend\":\""
+          << EscapeJSON(snapshotJpegBackend_.backend)
+          << "\",\"snapshotJpegHardwareState\":\""
+          << EscapeJSON(snapshotJpegBackend_.hardwareState)
           << "\",\"capabilities\":[\"set-active\",\"request-keyframe\",\"snapshot\",\"fresh-snapshot\"]}\n";
     const std::string encoded = reply.str();
     SendAll(client, encoded.data(), encoded.size());
@@ -1213,6 +1258,8 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
       std::lock_guard<std::mutex> lock(snapshotMutex_);
       snapshot_ = SnapshotResult{};
       snapshot_.id = snapshotID;
+      snapshot_.generation = ++snapshotGeneration_;
+      snapshot_.includeRGB = includeRGB;
       // Capture the first render completed *after* this transaction begins.
       // Gazebo's freshly activated camera target can still contain its
       // zero-filled allocation during the first target callback.
@@ -1266,6 +1313,10 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
            << ",\"pixelFormat\":\"rgb8\""
            << ",\"jpegBytes\":" << response.jpeg.size()
            << ",\"rgbBytes\":" << response.rgb.size()
+           << ",\"jpegBackend\":\"" << EscapeJSON(response.jpegBackend) << "\""
+           << ",\"jpegReadback\":\"" << EscapeJSON(response.jpegReadback) << "\""
+           << ",\"jpegReadbackMilliseconds\":" << response.jpegReadbackMilliseconds
+           << ",\"jpegEncodeMilliseconds\":" << response.jpegEncodeMilliseconds
            << ",\"cameraMatrix\":[";
     for (std::size_t index = 0; index < response.cameraMatrix.size(); ++index) {
       if (index != 0) {
@@ -1281,6 +1332,10 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
       header << response.distortion[index];
     }
     header << ']';
+    if (!response.jpegFallbackReason.empty()) {
+      header << ",\"jpegFallbackReason\":\""
+             << EscapeJSON(response.jpegFallbackReason) << '"';
+    }
     if (response.renderPoseValid) {
       header << ",\"renderPose\":{\"position\":{\"x\":"
              << response.renderPosition[0] << ",\"y\":"
@@ -1303,9 +1358,13 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     }
   }
 
-  bool SnapshotPending() const {
+  bool SnapshotNeedsRender() const {
+    if (snapshotReadbackPending_.load()) {
+      return true;
+    }
     std::lock_guard<std::mutex> lock(snapshotMutex_);
-    return !snapshot_.id.empty() && !snapshot_.completed;
+    return !snapshot_.id.empty() && !snapshot_.completed &&
+           !snapshot_.captureSubmitted;
   }
 
   void OnPostRender() {
@@ -1317,7 +1376,7 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     if (!camera_) {
       camera_ = sensor_->Camera();
       if (!camera_) {
-        if (shouldEncode || SnapshotPending()) {
+        if (shouldEncode || SnapshotNeedsRender()) {
           sensor_->SetActive(true);
         }
         return;
@@ -1326,7 +1385,7 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     if (!AttachRenderTargetListener()) {
       return;
     }
-    const bool shouldRender = shouldEncode || SnapshotPending();
+    const bool shouldRender = shouldEncode || SnapshotNeedsRender();
     if (shouldRender) {
       if (!sensor_->IsActive()) {
         sensor_->SetActive(true);
@@ -1371,14 +1430,14 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     const bool shouldEncode =
         desiredActive_.load() || rosConsumersActive_.load();
     if (cleanupEncoderRequested_.exchange(false) && !shouldEncode &&
-        !SnapshotPending()) {
+        !SnapshotNeedsRender()) {
       DestroyEncoder();
       return;
     }
-    if (!shouldEncode && !SnapshotPending()) {
+    if (!shouldEncode && !SnapshotNeedsRender()) {
       return;
     }
-    if (SnapshotPending()) {
+    if (SnapshotNeedsRender()) {
       CaptureSnapshot();
     }
     if (!shouldEncode) {
@@ -1395,10 +1454,14 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
   }
 
   bool CaptureSnapshot() {
+    if (snapshotReadbackPending_.load()) {
+      return PollSnapshotPBOReadback();
+    }
     SnapshotResult result;
     {
       std::lock_guard<std::mutex> lock(snapshotMutex_);
-      if (snapshot_.id.empty() || snapshot_.completed) {
+      if (snapshot_.id.empty() || snapshot_.completed ||
+          snapshot_.captureSubmitted) {
         return false;
       }
       if (snapshotRenderPassesToSkip_ > 0) {
@@ -1406,6 +1469,8 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
         return false;
       }
       result.id = snapshot_.id;
+      result.generation = snapshot_.generation;
+      result.includeRGB = snapshot_.includeRGB;
     }
     if (!camera_ || !camera_->RenderTexture()) {
       CompleteSnapshotFailure("camera render texture is unavailable");
@@ -1418,22 +1483,6 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
       return false;
     }
     const std::size_t bytes = static_cast<std::size_t>(width) * height * 3;
-    result.rgb.resize(bytes);
-    try {
-      // PF_R8G8B8 is a word-ordered format and therefore writes B,G,R bytes
-      // on little-endian hosts. The snapshot contract is explicitly rgb8, so
-      // request OGRE's byte-ordered RGB format.
-      Ogre::PixelBox destination(width, height, 1, Ogre::PF_BYTE_RGB, result.rgb.data());
-      camera_->RenderTexture()->getBuffer()->blitToMemory(destination);
-    } catch (const std::exception &error) {
-      CompleteSnapshotFailure(std::string("camera snapshot readback failed: ") + error.what());
-      return false;
-    }
-    result.jpeg = EncodeJPEG(result.rgb, width, height);
-    if (result.jpeg.empty()) {
-      CompleteSnapshotFailure("camera snapshot JPEG encoding failed");
-      return false;
-    }
     result.width = width;
     result.height = height;
     const double hfov = camera_->HFOV().Radian();
@@ -1442,10 +1491,8 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
                            0.0, focalLength, (static_cast<double>(height) - 1.0) / 2.0,
                            0.0, 0.0, 1.0};
     result.distortion.fill(0.0);
-    // Gazebo renders along the camera-link +X axis, while the public ROS frame
-    // follows REP-103 optical coordinates (Z forward, X right, Y down). Record
-    // the pose of that exact optical frame at this render callback, not the
-    // model's launch pose, so movable-camera snapshots remain reproducible.
+    // Freeze source time and pose for the render being read back. JPEG work is
+    // deliberately deferred and must never relabel the frame with worker time.
     const ignition::math::Pose3d renderCameraPose = camera_->WorldPose();
     const ignition::math::Quaterniond linkToOptical(
         -1.5707963267948966, 0.0, -1.5707963267948966);
@@ -1464,17 +1511,278 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     result.poseFrameID = snapshotPoseFrameID_;
     result.renderPoseValid = true;
     const common::Time measurementTime = sensor_->LastMeasurementTime();
-    result.timestampNanoseconds = static_cast<std::int64_t>(measurementTime.sec) * 1'000'000'000LL + measurementTime.nsec;
+    result.timestampNanoseconds =
+        static_cast<std::int64_t>(measurementTime.sec) * 1'000'000'000LL +
+        measurementTime.nsec;
+
+    if (snapshotPBOAvailable_ && IssueSnapshotPBOReadback(result, bytes)) {
+      return true;
+    }
+    if (!snapshotPBOFailureReason_.empty()) {
+      result.jpegFallbackReason = snapshotPBOFailureReason_;
+    }
+    return CaptureSnapshotSynchronously(std::move(result), bytes);
+  }
+
+  bool CaptureSnapshotSynchronously(
+      SnapshotResult result,
+      std::size_t bytes) {
+    result.jpegReadback = "synchronous-cpu";
+    result.rgb.resize(bytes);
+    const auto readbackStarted = std::chrono::steady_clock::now();
+    try {
+      // PF_R8G8B8 is a word-ordered format and therefore writes B,G,R bytes
+      // on little-endian hosts. The snapshot contract is explicitly rgb8, so
+      // request OGRE's byte-ordered RGB format.
+      Ogre::PixelBox destination(
+          result.width, result.height, 1, Ogre::PF_BYTE_RGB,
+          result.rgb.data());
+      camera_->RenderTexture()->getBuffer()->blitToMemory(destination);
+    } catch (const std::exception &error) {
+      CompleteSnapshotFailure(std::string("camera snapshot readback failed: ") + error.what());
+      return false;
+    }
+    result.jpegReadbackMilliseconds = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - readbackStarted).count();
     {
       std::lock_guard<std::mutex> lock(snapshotMutex_);
-      if (snapshot_.id != result.id || snapshot_.completed) {
+      if (snapshot_.id != result.id ||
+          snapshot_.generation != result.generation || snapshot_.completed) {
         return false;
       }
-      result.completed = true;
-      snapshot_ = std::move(result);
+      snapshot_.captureSubmitted = true;
     }
-    snapshotCondition_.notify_all();
+    if (!QueueSnapshotEncode(std::move(result))) {
+      CompleteSnapshotFailure("snapshot JPEG worker queue is unavailable");
+      return false;
+    }
     return true;
+  }
+
+  bool EnsureGLEWDispatch() {
+    if (glewInitialized_) {
+      return true;
+    }
+    // SensorManager invokes its global post-render event after it releases the
+    // OGRE context. RenderTargetListener runs while that context is current.
+    glGetError();
+    if (glewInit() != GLEW_OK) {
+      LogEncoderError("GLEW could not initialize in the Gazebo render context");
+      return false;
+    }
+    glGetError();
+    glewInitialized_ = true;
+    return true;
+  }
+
+  bool EnsureSnapshotPBO(std::size_t bytes) {
+    if (!EnsureGLEWDispatch() || !GLEW_ARB_pixel_buffer_object ||
+        !GLEW_ARB_sync) {
+      snapshotPBOFailureReason_ =
+          "asynchronous OpenGL PBO readback is unavailable";
+      snapshotPBOAvailable_ = false;
+      LogEncoderError(snapshotPBOFailureReason_ + "; using synchronous readback");
+      return false;
+    }
+    if (snapshotReadbackBuffer_ == 0) {
+      glGenBuffers(1, &snapshotReadbackBuffer_);
+    }
+    if (snapshotReadFramebuffer_ == 0) {
+      glGenFramebuffers(1, &snapshotReadFramebuffer_);
+    }
+    if (snapshotReadbackBuffer_ == 0 || snapshotReadFramebuffer_ == 0) {
+      snapshotPBOFailureReason_ =
+          "OpenGL could not allocate snapshot PBO resources";
+      snapshotPBOAvailable_ = false;
+      LogEncoderError(snapshotPBOFailureReason_ + "; using synchronous readback");
+      return false;
+    }
+    if (snapshotReadbackBufferBytes_ != bytes) {
+      GLint previousBuffer = 0;
+      glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &previousBuffer);
+      while (glGetError() != GL_NO_ERROR) {
+      }
+      glBindBuffer(GL_PIXEL_PACK_BUFFER, snapshotReadbackBuffer_);
+      glBufferData(
+          GL_PIXEL_PACK_BUFFER, static_cast<GLsizeiptr>(bytes), nullptr,
+          GL_STREAM_READ);
+      glBindBuffer(GL_PIXEL_PACK_BUFFER, static_cast<GLuint>(previousBuffer));
+      if (glGetError() != GL_NO_ERROR) {
+        snapshotPBOFailureReason_ =
+            "OpenGL could not size the snapshot PBO";
+        snapshotPBOAvailable_ = false;
+        LogEncoderError(snapshotPBOFailureReason_ + "; using synchronous readback");
+        return false;
+      }
+      snapshotReadbackBufferBytes_ = bytes;
+    }
+    return true;
+  }
+
+  bool IssueSnapshotPBOReadback(
+      SnapshotResult &result,
+      std::size_t bytes) {
+    if (!EnsureSnapshotPBO(bytes)) {
+      return false;
+    }
+    auto *renderTexture = dynamic_cast<Ogre::GLTexture *>(
+        camera_->RenderTexture());
+    if (!renderTexture || renderTexture->getGLID() == 0) {
+      snapshotPBOFailureReason_ =
+          "Gazebo camera texture is not an OpenGL texture";
+      snapshotPBOAvailable_ = false;
+      LogEncoderError(snapshotPBOFailureReason_ + "; using synchronous readback");
+      return false;
+    }
+
+    GLint previousFramebuffer = 0;
+    GLint previousBuffer = 0;
+    GLint previousPackAlignment = 0;
+    GLint previousPackRowLength = 0;
+    GLint previousPackSkipRows = 0;
+    GLint previousPackSkipPixels = 0;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previousFramebuffer);
+    glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &previousBuffer);
+    glGetIntegerv(GL_PACK_ALIGNMENT, &previousPackAlignment);
+    glGetIntegerv(GL_PACK_ROW_LENGTH, &previousPackRowLength);
+    glGetIntegerv(GL_PACK_SKIP_ROWS, &previousPackSkipRows);
+    glGetIntegerv(GL_PACK_SKIP_PIXELS, &previousPackSkipPixels);
+    auto restore = [&] {
+      glBindBuffer(GL_PIXEL_PACK_BUFFER, static_cast<GLuint>(previousBuffer));
+      glPixelStorei(GL_PACK_ALIGNMENT, previousPackAlignment);
+      glPixelStorei(GL_PACK_ROW_LENGTH, previousPackRowLength);
+      glPixelStorei(GL_PACK_SKIP_ROWS, previousPackSkipRows);
+      glPixelStorei(GL_PACK_SKIP_PIXELS, previousPackSkipPixels);
+      glBindFramebuffer(
+          GL_READ_FRAMEBUFFER, static_cast<GLuint>(previousFramebuffer));
+    };
+
+    while (glGetError() != GL_NO_ERROR) {
+    }
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, snapshotReadFramebuffer_);
+    glFramebufferTexture2D(
+        GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+        renderTexture->getGLID(), 0);
+    if (glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) !=
+        GL_FRAMEBUFFER_COMPLETE) {
+      restore();
+      snapshotPBOFailureReason_ =
+          "OpenGL could not bind the Gazebo texture for snapshot readback";
+      snapshotPBOAvailable_ = false;
+      LogEncoderError(snapshotPBOFailureReason_ + "; using synchronous readback");
+      return false;
+    }
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, snapshotReadbackBuffer_);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+    glPixelStorei(GL_PACK_SKIP_ROWS, 0);
+    glPixelStorei(GL_PACK_SKIP_PIXELS, 0);
+    const auto started = std::chrono::steady_clock::now();
+    glReadPixels(
+        0, 0, static_cast<GLsizei>(result.width),
+        static_cast<GLsizei>(result.height), GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+    GLsync fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    glFlush();
+    const GLenum issueError = glGetError();
+    restore();
+    if (issueError != GL_NO_ERROR || fence == nullptr) {
+      if (fence != nullptr) {
+        glDeleteSync(fence);
+      }
+      snapshotPBOFailureReason_ =
+          "OpenGL could not issue asynchronous snapshot readback";
+      snapshotPBOAvailable_ = false;
+      LogEncoderError(snapshotPBOFailureReason_ + "; using synchronous readback");
+      return false;
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(snapshotMutex_);
+      if (snapshot_.id != result.id ||
+          snapshot_.generation != result.generation || snapshot_.completed) {
+        glDeleteSync(fence);
+        return true;
+      }
+      snapshot_.captureSubmitted = true;
+    }
+    result.jpegReadback = "opengl-pbo";
+    snapshotReadbackResult_ = std::move(result);
+    snapshotReadbackFence_ = fence;
+    snapshotReadbackStarted_ = started;
+    snapshotReadbackPending_.store(true);
+    return true;
+  }
+
+  bool PollSnapshotPBOReadback() {
+    if (!snapshotReadbackResult_ || snapshotReadbackFence_ == nullptr) {
+      snapshotReadbackPending_.store(false);
+      return false;
+    }
+    const GLenum status = glClientWaitSync(snapshotReadbackFence_, 0, 0);
+    if (status == GL_TIMEOUT_EXPIRED) {
+      return false;
+    }
+    SnapshotResult result = std::move(*snapshotReadbackResult_);
+    snapshotReadbackResult_.reset();
+    glDeleteSync(snapshotReadbackFence_);
+    snapshotReadbackFence_ = nullptr;
+    snapshotReadbackPending_.store(false);
+    if (status == GL_WAIT_FAILED) {
+      RearmSnapshotAfterPBOFailure(
+          result, "OpenGL snapshot PBO fence wait failed");
+      return false;
+    }
+
+    GLint previousBuffer = 0;
+    glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &previousBuffer);
+    while (glGetError() != GL_NO_ERROR) {
+    }
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, snapshotReadbackBuffer_);
+    const auto *mapped = static_cast<const std::uint8_t *>(glMapBufferRange(
+        GL_PIXEL_PACK_BUFFER, 0,
+        static_cast<GLsizeiptr>(snapshotReadbackBufferBytes_),
+        GL_MAP_READ_BIT));
+    if (!mapped) {
+      glBindBuffer(GL_PIXEL_PACK_BUFFER, static_cast<GLuint>(previousBuffer));
+      RearmSnapshotAfterPBOFailure(
+          result, "OpenGL could not map the completed snapshot PBO");
+      return false;
+    }
+    // Ogre's Gazebo RenderTexture GL storage already matches the H264/live
+    // image row order. Flipping mapped rows here makes snapshots disagree
+    // with Live and mirrors every AprilTag payload.
+    const bool copied = gazebo_sim_camera::CopyGazeboPBOToImageOrder(
+        mapped, snapshotReadbackBufferBytes_, result.width, result.height,
+        &result.rgb);
+    const GLboolean unmapped = glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, static_cast<GLuint>(previousBuffer));
+    if (!copied || unmapped != GL_TRUE || glGetError() != GL_NO_ERROR) {
+      RearmSnapshotAfterPBOFailure(
+          result, "OpenGL could not complete the snapshot PBO mapping");
+      return false;
+    }
+    result.jpegReadbackMilliseconds = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - snapshotReadbackStarted_).count();
+    if (!QueueSnapshotEncode(std::move(result))) {
+      CompleteSnapshotFailure("snapshot JPEG worker queue is unavailable");
+      return false;
+    }
+    return true;
+  }
+
+  void RearmSnapshotAfterPBOFailure(
+      const SnapshotResult &result,
+      const std::string &reason) {
+    snapshotPBOFailureReason_ = reason;
+    snapshotPBOAvailable_ = false;
+    LogEncoderError(reason + "; recapturing through synchronous readback");
+    std::lock_guard<std::mutex> lock(snapshotMutex_);
+    if (snapshot_.id == result.id &&
+        snapshot_.generation == result.generation && !snapshot_.completed) {
+      snapshot_.captureSubmitted = false;
+      snapshotRenderPassesToSkip_ = 0;
+    }
   }
 
   void CompleteSnapshotFailure(const std::string &error) {
@@ -1490,35 +1798,122 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     snapshotCondition_.notify_all();
   }
 
-  std::vector<std::uint8_t> EncodeJPEG(const std::vector<std::uint8_t> &rgb, unsigned int width, unsigned int height) const {
-    jpeg_compress_struct encoder{};
-    JPEGErrorManager errors{};
-    encoder.err = jpeg_std_error(&errors.manager);
-    errors.manager.error_exit = JPEGErrorExit;
-    if (setjmp(errors.jumpBuffer) != 0) {
-      jpeg_destroy_compress(&encoder);
-      return {};
+  bool StartSnapshotEncoder() {
+    try {
+      snapshotEncoderStopping_ = false;
+      snapshotEncoderThread_ =
+          std::thread(&XGCMediaCameraPlugin::SnapshotEncoderLoop, this);
+      return true;
+    } catch (const std::system_error &error) {
+      gzerr << "xgc_media_camera could not start snapshot JPEG worker: "
+            << error.what() << "\n";
+      return false;
     }
-    jpeg_create_compress(&encoder);
-    unsigned char *encoded = nullptr;
-    unsigned long encodedSize = 0;
-    jpeg_mem_dest(&encoder, &encoded, &encodedSize);
-    encoder.image_width = width;
-    encoder.image_height = height;
-    encoder.input_components = 3;
-    encoder.in_color_space = JCS_RGB;
-    jpeg_set_defaults(&encoder);
-    jpeg_set_quality(&encoder, jpegQuality_, TRUE);
-    jpeg_start_compress(&encoder, TRUE);
-    while (encoder.next_scanline < encoder.image_height) {
-      JSAMPROW row = const_cast<JSAMPLE *>(rgb.data() + static_cast<std::size_t>(encoder.next_scanline) * width * 3);
-      jpeg_write_scanlines(&encoder, &row, 1);
+  }
+
+  void StopSnapshotEncoder() {
+    {
+      std::lock_guard<std::mutex> lock(snapshotEncoderMutex_);
+      snapshotEncoderStopping_ = true;
+      snapshotEncodeJob_.reset();
     }
-    jpeg_finish_compress(&encoder);
-    std::vector<std::uint8_t> result(encoded, encoded + encodedSize);
-    jpeg_destroy_compress(&encoder);
-    std::free(encoded);
-    return result;
+    snapshotEncoderCondition_.notify_all();
+    if (snapshotEncoderThread_.joinable()) {
+      snapshotEncoderThread_.join();
+    }
+  }
+
+  bool QueueSnapshotEncode(SnapshotResult result) {
+    {
+      std::lock_guard<std::mutex> lock(snapshotEncoderMutex_);
+      if (snapshotEncoderStopping_ || snapshotEncodeJob_) {
+        return false;
+      }
+      snapshotEncodeJob_ = std::move(result);
+    }
+    snapshotEncoderCondition_.notify_one();
+    return true;
+  }
+
+  void SnapshotEncoderLoop() {
+    while (true) {
+      SnapshotResult result;
+      {
+        std::unique_lock<std::mutex> lock(snapshotEncoderMutex_);
+        snapshotEncoderCondition_.wait(lock, [this] {
+          return snapshotEncoderStopping_ || snapshotEncodeJob_.has_value();
+        });
+        if (snapshotEncoderStopping_) {
+          return;
+        }
+        result = std::move(*snapshotEncodeJob_);
+        snapshotEncodeJob_.reset();
+      }
+
+      gazebo_sim_camera::SnapshotJpegEncodeResult encoded;
+      const bool tryHardware = snapshotJpegBackend_.useHardware &&
+          !snapshotJpegHardwareFusedOff_.load();
+      const auto encodeStarted = std::chrono::steady_clock::now();
+      if (tryHardware) {
+        encoded = snapshotJpegHardware_.Encode(
+            result.rgb.data(), result.rgb.size(), result.width, result.height,
+            jpegQuality_);
+      }
+      if (!tryHardware ||
+          (!encoded.error.empty() && snapshotJpegBackend_.allowCPUFallback)) {
+        if (tryHardware && !encoded.error.empty()) {
+          snapshotJpegHardwareFusedOff_.store(true);
+          result.jpegFallbackReason =
+              "hardware JPEG backend failed and was fused off: " +
+              encoded.error;
+          LogEncoderError(result.jpegFallbackReason);
+        }
+        encoded = gazebo_sim_camera::EncodeSnapshotJpegCPU(
+            result.rgb.data(), result.rgb.size(), result.width, result.height,
+            jpegQuality_);
+      }
+      result.jpegEncodeMilliseconds = std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - encodeStarted).count();
+      result.jpegBackend = encoded.backend;
+      if (snapshotJpegPolicy_ == gazebo_sim_camera::SnapshotJpegPolicy::kAuto &&
+          snapshotJpegBackend_.hardwareState == "unavailable") {
+        if (!result.jpegFallbackReason.empty()) {
+          result.jpegFallbackReason += "; ";
+        }
+        result.jpegFallbackReason += "hardware backend unavailable at runtime preflight";
+        if (!snapshotJpegHardwarePreflightError_.empty()) {
+          result.jpegFallbackReason += ": " +
+              snapshotJpegHardwarePreflightError_;
+        }
+      }
+      result.jpeg = std::move(encoded.bytes);
+      if (!result.includeRGB) {
+        result.rgb.clear();
+        result.rgb.shrink_to_fit();
+      }
+      if (!encoded.error.empty() || result.jpeg.empty()) {
+        result.failed = true;
+        result.error = encoded.error.empty()
+            ? "camera snapshot JPEG encoding failed"
+            : encoded.error;
+        LogEncoderError(result.error);
+      }
+      result.completed = true;
+
+      bool delivered = false;
+      {
+        std::lock_guard<std::mutex> lock(snapshotMutex_);
+        if (snapshot_.id == result.id &&
+            snapshot_.generation == result.generation &&
+            !snapshot_.completed) {
+          snapshot_ = std::move(result);
+          delivered = true;
+        }
+      }
+      if (delivered) {
+        snapshotCondition_.notify_all();
+      }
+    }
   }
 
   std::int64_t SourceTimeNanoseconds() const {
@@ -1859,18 +2254,8 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
   }
 
   bool EnsureConversionTexture(unsigned int width, unsigned int height) {
-    if (!glewInitialized_) {
-      // SensorManager invokes its global post-render event after it releases
-      // the OGRE context. RenderTargetListener, in contrast, runs inside the
-      // target update with that context current, which is the only safe place
-      // to initialize the plugin's GLEW dispatch table.
-      glGetError();
-      if (glewInit() != GLEW_OK) {
-        LogEncoderError("GLEW could not initialize in the Gazebo render context");
-        return false;
-      }
-      glGetError();
-      glewInitialized_ = true;
+    if (!EnsureGLEWDispatch()) {
+      return false;
     }
     if (encoderTexture_ != 0 && encoderTextureWidth_ == width && encoderTextureHeight_ == height) {
       return true;
@@ -2130,6 +2515,12 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
   int pacingBitrate_ = 0;
   int vbvBufferMilliseconds_ = 500;
   int jpegQuality_ = 90;
+  gazebo_sim_camera::SnapshotJpegPolicy snapshotJpegPolicy_ =
+      gazebo_sim_camera::SnapshotJpegPolicy::kAuto;
+  gazebo_sim_camera::SnapshotJpegBackendDecision snapshotJpegBackend_;
+  gazebo_sim_camera::SnapshotJpegHardwareBackend snapshotJpegHardware_;
+  std::string snapshotJpegHardwarePreflightError_;
+  std::atomic<bool> snapshotJpegHardwareFusedOff_{false};
   bool rosPublishingEnabled_ = true;
   std::string rosVideoTopic_;
   std::string rosFrameTimingTopic_;
@@ -2150,7 +2541,22 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
   mutable std::mutex snapshotMutex_;
   std::condition_variable snapshotCondition_;
   SnapshotResult snapshot_;
+  std::uint64_t snapshotGeneration_ = 0;
   unsigned int snapshotRenderPassesToSkip_ = 0;
+  std::atomic<bool> snapshotReadbackPending_{false};
+  bool snapshotPBOAvailable_ = true;
+  std::string snapshotPBOFailureReason_;
+  GLuint snapshotReadbackBuffer_ = 0;
+  GLuint snapshotReadFramebuffer_ = 0;
+  GLsync snapshotReadbackFence_ = nullptr;
+  std::size_t snapshotReadbackBufferBytes_ = 0;
+  std::optional<SnapshotResult> snapshotReadbackResult_;
+  std::chrono::steady_clock::time_point snapshotReadbackStarted_;
+  std::mutex snapshotEncoderMutex_;
+  std::condition_variable snapshotEncoderCondition_;
+  std::optional<SnapshotResult> snapshotEncodeJob_;
+  std::thread snapshotEncoderThread_;
+  bool snapshotEncoderStopping_ = false;
 
   int rtpSocket_ = -1;
   sockaddr_in rtpDestination_{};

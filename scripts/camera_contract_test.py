@@ -81,13 +81,14 @@ class CameraContractTest(unittest.TestCase):
         finally:
             connection.close()
 
-    def request_snapshot(self, path):
+    def request_snapshot(self, path, snapshot_id="static-camera-contract", **options):
         connection = self.connect_to_camera(path, timeout=90.0)
         try:
             request = {
                 "operation": "snapshot",
-                "snapshotId": "static-camera-contract",
+                "snapshotId": snapshot_id,
             }
+            request.update(options)
             connection.sendall(json.dumps(request).encode("utf-8") + b"\n")
             encoded_header, payload_prefix = receive_line(connection)
             header = json.loads(encoded_header.decode("utf-8"))
@@ -131,6 +132,16 @@ class CameraContractTest(unittest.TestCase):
         )
         expect_encoded_frames = bool(
             rospy.get_param("~expect_encoded_frames", False)
+        )
+        expected_jpeg_policy = rospy.get_param("~expected_jpeg_policy", "auto")
+        expected_jpeg_backend = rospy.get_param(
+            "~expected_jpeg_backend", "libjpeg-turbo"
+        )
+        expected_jpeg_hardware_state = rospy.get_param(
+            "~expected_jpeg_hardware_state", "unavailable"
+        )
+        expect_jpeg_fallback = bool(
+            rospy.get_param("~expect_jpeg_fallback", True)
         )
 
         stream_info = rospy.wait_for_message(
@@ -229,6 +240,9 @@ class CameraContractTest(unittest.TestCase):
                 "height": height,
                 "frameId": frame_id,
                 "timestampClockDomain": "simulation",
+                "snapshotJpegPolicy": expected_jpeg_policy,
+                "snapshotJpegBackend": expected_jpeg_backend,
+                "snapshotJpegHardwareState": expected_jpeg_hardware_state,
                 "capabilities": [
                     "set-active",
                     "request-keyframe",
@@ -249,6 +263,33 @@ class CameraContractTest(unittest.TestCase):
         self.assertGreater(len(jpeg), 4)
         self.assertEqual(jpeg[:2], b"\xff\xd8")
         self.assertEqual(jpeg[-2:], b"\xff\xd9")
+        self.assertEqual(header["jpegBackend"], expected_jpeg_backend)
+        # Mesa/Xvfb is the minimum portable accelerated-readback gate. The
+        # synchronous path remains a runtime fallback, not the accepted CI
+        # default for a build that advertises OpenGL PBO support.
+        self.assertEqual(header["jpegReadback"], "opengl-pbo")
+        self.assertGreaterEqual(header["jpegReadbackMilliseconds"], 0.0)
+        self.assertGreaterEqual(header["jpegEncodeMilliseconds"], 0.0)
+        if expect_jpeg_fallback:
+            self.assertIn("jpegFallbackReason", header)
+        else:
+            self.assertNotIn("jpegFallbackReason", header)
+
+        jpeg_header, jpeg_only, jpeg_rgb = self.request_snapshot(
+            control_socket,
+            snapshot_id="static-camera-contract-jpeg-only",
+            includeRgb=False,
+            requestKeyframe=False,
+            requireFresh=True,
+        )
+        self.assertEqual(jpeg_header["snapshotId"], "static-camera-contract-jpeg-only")
+        self.assertGreater(
+            jpeg_header["timestampNanoseconds"], header["timestampNanoseconds"]
+        )
+        self.assertEqual(jpeg_header["rgbBytes"], 0)
+        self.assertEqual(jpeg_rgb, b"")
+        self.assertEqual(jpeg_only[:2], b"\xff\xd8")
+        self.assertEqual(jpeg_only[-2:], b"\xff\xd9")
 
         camera_matrix = header["cameraMatrix"]
         self.assertEqual(len(camera_matrix), 9)

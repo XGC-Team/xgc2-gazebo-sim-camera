@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<launch>
+  <include file="$(find gazebo_sim_camera)/launch/static_camera.launch">
+    <arg name="gui" value="false"/>
+    <arg name="model_name" value="gazebo_static_camera_hardware_contract"/>
+    <arg name="camera_link_frame" value="hardware_camera_link"/>
+    <arg name="optical_frame" value="hardware_camera_optical_frame"/>
+    <arg name="camera_profile" value="world_wide_4k30_110"/>
+    <arg name="media_source_id" value="hardware_camera"/>
+    <arg name="media_rtp_port" value="15014"/>
+    <arg name="media_control_socket" value="/tmp/xgc2/media/hardware_camera.sock"/>
+    <arg name="snapshot_jpeg_backend" value="hardware"/>
+    <arg name="encoded_video_topic" value="/xgc/test/hardware_camera/video_h264"/>
+    <arg name="frame_timing_topic" value="/xgc/test/hardware_camera/frame_timing"/>
+    <arg name="stream_info_topic" value="/xgc/test/hardware_camera/stream_info"/>
+    <arg name="parent_frame" value="map"/>
+    <arg name="mode" value="truth"/>
+    <arg name="publish_truth_tf" value="true"/>
+  </include>
+  <test test-name="static_camera_hardware_contract" pkg="gazebo_sim_camera"
+        type="camera_contract_test.py" time-limit="180">
+    <param name="control_socket" value="/tmp/xgc2/media/hardware_camera.sock"/>
+    <param name="source_id" value="hardware_camera"/>
+    <param name="rtp_host" value="127.0.0.1"/>
+    <param name="rtp_port" value="15014"/>
+    <param name="frame_id" value="hardware_camera_optical_frame"/>
+    <param name="parent_frame" value="map"/>
+    <param name="width" value="3840"/>
+    <param name="height" value="2160"/>
+    <param name="fps" value="30.0"/>
+    <param name="hfov" value="1.9198621771937625"/>
+    <param name="stream_info_topic" value="/xgc/test/hardware_camera/stream_info"/>
+    <param name="video_topic" value="/xgc/test/hardware_camera/video_h264"/>
+    <param name="frame_timing_topic" value="/xgc/test/hardware_camera/frame_timing"/>
+    <param name="camera_info_topic" value="/xgc/camera/world/camera_info"/>
+    <param name="expect_encoded_frames" value="false"/>
+    <param name="expected_jpeg_policy" value="hardware"/>
+    <param name="expected_jpeg_backend" value="nvjpeg-cuda"/>
+    <param name="expected_jpeg_hardware_state" value="available"/>
+    <param name="expect_jpeg_fallback" value="false"/>
+  </test>
+</launch>

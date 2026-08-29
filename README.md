@@ -6,7 +6,7 @@ and does not modify FS150, Scout, UAV, or other onboard camera definitions.
 
 ## Media contract
 
-The managed camera path performs one source encode:
+The managed live-video path performs one source encode:
 
 ```text
 Gazebo render texture -> OpenGL texture -> NVENC H264 Annex-B
@@ -25,11 +25,47 @@ topics, rosbag commands, epoch semantics, and replay guidance.
 The live WebUI path does not publish raw or periodic JPEG video through ROS. The camera
 plugin exposes a private Unix control socket under `/tmp/xgc2/media/`; the media
 edge activates the sensor only while a consumer needs live video. An explicit
-snapshot request renders one frame and returns its JPEG, RGB pixels, source
-timestamp, pinhole camera matrix, zero-distortion vector, and the exact
+snapshot request renders one fresh frame and returns its JPEG, optional RGB
+pixels, source timestamp, pinhole camera matrix, zero-distortion vector, and the exact
 optical-frame render pose with its declared pose frame. The pose and pixels are
 sampled from the same Gazebo render transaction rather than joined later
 through TF.
+
+Snapshot JPEG policy is `auto`, strict `hardware`, or `cpu`. The portable path
+issues a full-resolution OpenGL PBO readback, freezes metadata on that render,
+and encodes through a depth-one libjpeg-turbo worker without blocking the
+render callback. If PBO preflight or mapping fails it recaptures through the
+legacy synchronous CPU readback. `auto` may use a separately packaged GPU
+backend only after full runtime preflight and otherwise falls back; `hardware`
+never silently falls back; `cpu` never probes an accelerator. NVENC remains the
+H264 backend and is never reported as a JPEG encoder.
+The mapped Gazebo/Ogre RenderTexture bytes already use the row order consumed
+by the Live H264 path. The PBO helper therefore preserves that order; it must
+not apply a generic OpenGL vertical flip. Runtime acceptance compares one Live
+frame and one fresh snapshot at the same pose, including horizon, shadows, and
+AprilTag chirality.
+The optional module is loaded through the versioned C ABI in
+`src/snapshot_jpeg_hardware_abi.h`. The main plugin has no CUDA linkage; a
+vendor package owns device/runtime preflight and returns ordinary baseline
+JPEG bytes. Runtime failure in `auto` fuses that module off and retries the
+same captured RGB through libjpeg-turbo, while strict `hardware` fails the
+snapshot.
+
+Build the x86-64 CUDA 11.8 backend as a small relocatable runtime bundle, then
+run the RTX gate:
+
+```bash
+bundle="$(mktemp -d /tmp/xgc-nvjpeg-bundle.XXXXXX)"
+.xgc2/scripts/build_nvjpeg_backend_in_docker.sh --output-dir "$bundle"
+.xgc2/scripts/test_nvjpeg_backend.sh "$bundle"
+```
+
+The pinned CUDA image is only a build stage. The bundle contains the module,
+`libnvjpeg.so.11`, `libcudart.so.11.0`, and a digest manifest (about 6 MiB in
+the current profile); the main plugin and CPU/Mesa package keep zero CUDA
+linkage. RTX uses the CUDA implementation and is reported as `nvjpeg-cuda`,
+not fixed-function JPEG hardware. Jetson hardware encode requires a separate
+JetPack/Thor backend gate.
 The older ROS JPEG preview topic is compatibility-only and its continuous
 snapshot timer is disabled by default; set
 `enable_continuous_jpeg_preview:=true` only for a consumer that still requires
@@ -56,7 +92,8 @@ the source it is paired with before activating rendering:
 The response reports protocol version 1, the resolved Gazebo sensor dimensions
 and update rate, H264/RTP payload type 96 at a 90 kHz clock, the actual loopback
 RTP host and port, the source and frame IDs, and the supported `set-active`,
-`request-keyframe`, and `snapshot` operations. Media Edge validates these
+`request-keyframe`, `snapshot`, and `fresh-snapshot` operations, plus the JPEG
+policy/actual-backend/hardware-state diagnostics. Media Edge validates these
 values before opening its RTP listener, so a mismatched camera/edge port fails
 at startup instead of leaving a silent source. `describe` is side-effect free
 and remains available while the sensor and NVENC encoder are inactive.
@@ -83,7 +120,7 @@ roslaunch gazebo_sim_camera static_camera.launch \
 ```
 
 For direct developer launches, `width`, `height`, `fps`, `hfov_degrees`,
-clipping, noise, bitrate, VBV, and JPEG-quality arguments are explicit
+clipping, noise, bitrate, VBV, JPEG-quality, and snapshot JPEG policy arguments are explicit
 overrides. Their default value is the sentinel `profile`; `hfov_degrees` is
 converted to radians inside the xacro contract and there is no radians-based
 alias. The managed ProcessDefinition exposes only `cameraProfile`, so
@@ -206,9 +243,10 @@ The profile unit test validates schema bounds and expands every named profile
 through xacro. While the source is inactive, the Gazebo contract first calls
 `describe` and validates the actual source identity, H264/RTP contract and
 loopback endpoint, dimensions, frame rate, frame ID, and capabilities. It then
-requests one explicit snapshot and validates dimensions, JPEG/RGB payloads,
-pinhole intrinsics, render pose, pose-frame identity, and TF without requiring
-NVENC video encoding in the test.
+requests both a legacy JPEG+RGB snapshot and a fresh JPEG-only transaction;
+it validates dimensions, increasing source timestamps, backend/readback
+diagnostics, JPEG/RGB payloads, pinhole intrinsics, render pose, pose-frame
+identity, and TF without requiring NVENC video encoding in the test.
 The multi-architecture Docker build sources the just-built Catkin overlay and
 runs this snapshot contract through Xvfb with Mesa software rendering. It is
 therefore valid on an arm64 runner without a GPU; hardware NVENC remains a

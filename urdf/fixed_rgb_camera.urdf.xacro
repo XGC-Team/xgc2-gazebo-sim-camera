@@ -33,6 +33,7 @@
   <xacro:arg name="media_pacing_bitrate" default="profile"/>
   <xacro:arg name="media_vbv_buffer_milliseconds" default="profile"/>
   <xacro:arg name="snapshot_jpeg_quality" default="profile"/>
+  <xacro:arg name="snapshot_jpeg_backend" default="auto"/>
   <xacro:arg name="width" default="profile"/>
   <xacro:arg name="height" default="profile"/>
   <xacro:arg name="fps" default="profile"/>
@@ -171,6 +172,7 @@
         <pacingBitrate>${camera_media_pacing_bitrate}</pacingBitrate>
         <vbvBufferMilliseconds>${camera_media_vbv_buffer_milliseconds}</vbvBufferMilliseconds>
         <jpegQuality>${camera_snapshot_jpeg_quality}</jpegQuality>
+        <snapshotJpegBackend>$(arg snapshot_jpeg_backend)</snapshotJpegBackend>
       </plugin>
     </sensor>
   </gazebo>

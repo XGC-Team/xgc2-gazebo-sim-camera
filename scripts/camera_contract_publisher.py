@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Publish a world camera through the stable XGC camera contract.
 
-The world-camera product owns this contract. It publishes simulation-truth
-intrinsics and extrinsics immediately from its frozen launch configuration.
+The world-camera product owns this contract. It publishes the explicitly
+selected intrinsic calibration and the frozen simulation extrinsics.
 Periodic JPEG snapshot polling is a disabled-by-default compatibility mode;
 live and recorded video uses the source plugin's encoded H264 topics.
 """
@@ -11,6 +11,7 @@ import json
 import math
 import socket
 import threading
+from pathlib import Path
 
 import rospy
 from geometry_msgs.msg import TransformStamped
@@ -65,6 +66,41 @@ def _boolean(value):
     raise ValueError("expected a boolean value")
 
 
+def _selected_intrinsics(path_value, configured_size):
+    path = Path(str(path_value).strip()).expanduser()
+    if not path.is_absolute():
+        raise ValueError("intrinsic_file must be an absolute YAML file path")
+    with path.open("r", encoding="utf-8") as stream:
+        document = yaml.safe_load(stream) or {}
+    if not isinstance(document, dict) or document.get("schema") != "xgc2.camera.intrinsic.v1":
+        raise ValueError("intrinsic_file must contain an xgc2.camera.intrinsic.v1 document")
+    matrix = document.get("camera_matrix", {})
+    distortion = document.get("distortion_coefficients", {})
+    matrix_data = matrix.get("data") if isinstance(matrix, dict) else None
+    distortion_data = distortion.get("data") if isinstance(distortion, dict) else None
+    width = int(document.get("image_width", 0))
+    height = int(document.get("image_height", 0))
+    if not isinstance(matrix_data, list) or len(matrix_data) != 9:
+        raise ValueError("intrinsic_file camera_matrix.data must contain nine values")
+    if not isinstance(distortion_data, list) or len(distortion_data) < 4:
+        raise ValueError(
+            "intrinsic_file distortion_coefficients.data must contain at least four values"
+        )
+    if (width, height) != configured_size:
+        raise ValueError(
+            "intrinsic_file is {}x{}, but the configured camera is {}x{}".format(
+                width,
+                height,
+                configured_size[0],
+                configured_size[1],
+            )
+        )
+    values = [float(value) for value in matrix_data + distortion_data]
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("intrinsic_file contains non-finite calibration values")
+    return [float(value) for value in matrix_data], [float(value) for value in distortion_data]
+
+
 def _configured_intrinsics():
     profile_path = rospy.get_param("~camera_profiles_file")
     profile_name = rospy.get_param("~camera_profile")
@@ -101,7 +137,7 @@ def _configured_intrinsics():
     if not math.isfinite(horizontal_fov) or not 0.0 < horizontal_fov < math.pi:
         raise ValueError("world-camera horizontal FOV must be between 0 and pi")
     focal_length = width / (2.0 * math.tan(horizontal_fov / 2.0))
-    return width, height, [
+    camera_matrix = [
         focal_length,
         0.0,
         (width - 1.0) / 2.0,
@@ -112,6 +148,15 @@ def _configured_intrinsics():
         0.0,
         1.0,
     ]
+    intrinsic_file = str(rospy.get_param("~intrinsic_file", "")).strip()
+    if intrinsic_file:
+        camera_matrix, distortion = _selected_intrinsics(
+            intrinsic_file,
+            (width, height),
+        )
+    else:
+        distortion = [0.0] * 5
+    return width, height, camera_matrix, distortion
 
 
 def _transform(parent, child, translation, rotation, stamp):
@@ -136,7 +181,12 @@ class CameraContractPublisher:
         self._snapshot_timeout = float(rospy.get_param("~snapshot_timeout", 5.0))
         if self._snapshot_timeout <= 0.0:
             raise ValueError("snapshot_timeout must be positive")
-        self._width, self._height, self._camera_matrix = _configured_intrinsics()
+        (
+            self._width,
+            self._height,
+            self._camera_matrix,
+            self._distortion,
+        ) = _configured_intrinsics()
         self._snapshot_sequence = 0
         self._snapshot_lock = threading.Lock()
         self._camera_info_publisher = rospy.Publisher(
@@ -190,8 +240,8 @@ class CameraContractPublisher:
                 rospy.Duration(1.0 / image_rate),
                 self._publish_media_snapshot,
             )
-        # Intrinsics and extrinsics are truth owned by this product, not data
-        # inferred from the simulator image transport. Publish both at startup.
+        # CameraInfo comes from the selected calibration file when supplied;
+        # it is never inferred from image transport metadata.
         self._publish_camera_info(rospy.Time.now())
         self._publish_transforms()
 
@@ -202,7 +252,7 @@ class CameraContractPublisher:
         output.height = self._height
         output.width = self._width
         output.distortion_model = "plumb_bob"
-        output.D = [0.0] * 5
+        output.D = list(self._distortion)
         output.K = list(self._camera_matrix)
         output.R = [
             1.0, 0.0, 0.0,

@@ -13,6 +13,7 @@
   <arg name="camera_profile" default="world_wide_4k30_110"/>
   <arg name="camera_profiles_file"
        default="$(find gazebo_sim_camera)/config/world_camera_profiles.yaml"/>
+  <arg name="intrinsic_file" default=""/>
   <!-- Accept an absolute path for source-development images. The sensor
        plugin is loaded by the already-running gzserver process, so a
        GAZEBO_PLUGIN_PATH added only to this roslaunch process is too late. -->
@@ -39,6 +40,10 @@
   <arg name="media_pacing_bitrate" default="profile"/>
   <arg name="media_vbv_buffer_milliseconds" default="profile"/>
   <arg name="snapshot_jpeg_quality" default="profile"/>
+  <!-- auto prefers a fully preflighted optional GPU JPEG backend and falls
+       back to the asynchronous PBO/CPU path. hardware is strict; cpu never
+       probes an accelerator. -->
+  <arg name="snapshot_jpeg_backend" default="auto"/>
   <arg name="gt_camera_link_frame" default="usb_cam_link_gt"/>
   <arg name="gt_optical_frame" default="usb_cam_optical_frame_gt"/>
   <arg name="parent_frame" default="world"/>
@@ -121,7 +126,8 @@
            media_bitrate:=$(arg media_bitrate) media_max_bitrate:=$(arg media_max_bitrate)
            media_pacing_bitrate:=$(arg media_pacing_bitrate)
            media_vbv_buffer_milliseconds:=$(arg media_vbv_buffer_milliseconds)
-           snapshot_jpeg_quality:=$(arg snapshot_jpeg_quality)"/>
+           snapshot_jpeg_quality:=$(arg snapshot_jpeg_quality)
+           snapshot_jpeg_backend:=$(arg snapshot_jpeg_backend)"/>
 
   <node pkg="gazebo_ros" type="spawn_model" name="spawn_$(arg model_name)" output="screen"
         args="-urdf -param $(arg model_name)_description -model $(arg model_name)
@@ -130,12 +136,13 @@
   <node if="$(arg publish_xgc_contract)"
         pkg="gazebo_sim_camera" type="camera_contract_publisher.py"
         name="$(arg model_name)_xgc_camera_contract" output="screen" required="true">
-    <!-- This world-camera product owns the complete XGC contract. Intrinsics
-         are resolved from the same frozen profile/FOV values used by xacro;
-         JPEG frames come from the product media source, never Gazebo ROS
-         camera topics. -->
+    <!-- This world-camera product owns the complete XGC contract. CameraInfo
+         uses the selected intrinsic YAML when supplied; the profile remains
+         the pre-calibration fallback used by intrinsic capture itself. JPEG
+         frames come from the product media source, never Gazebo ROS topics. -->
     <param name="camera_profile" value="$(arg camera_profile)"/>
     <param name="camera_profiles_file" value="$(arg camera_profiles_file)"/>
+    <param name="intrinsic_file" value="$(arg intrinsic_file)"/>
     <param name="width" value="$(arg width)"/>
     <param name="height" value="$(arg height)"/>
     <param name="hfov_degrees" value="$(arg hfov_degrees)"/>

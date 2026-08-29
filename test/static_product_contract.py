@@ -155,6 +155,20 @@ assert "_configured_intrinsics()" in camera_contract
 assert '"includeRgb": False' in camera_contract
 assert '"requestKeyframe": False' in camera_contract
 assert "fresh-snapshot" in media_plugin
+assert 'SDFValue<std::string>(sdf, "snapshotJpegBackend", "auto")' in media_plugin
+assert "ParseSnapshotJpegPolicy" in media_plugin
+assert "IssueSnapshotPBOReadback" in media_plugin
+assert "SnapshotEncoderLoop" in media_plugin
+assert '<xacro:arg name="snapshot_jpeg_backend" default="auto"/>' in xacro
+assert '<snapshotJpegBackend>$(arg snapshot_jpeg_backend)</snapshotJpegBackend>' in xacro
+assert '<arg name="snapshot_jpeg_backend" default="auto"/>' in launch
+assert "snapshot_jpeg_backend:=$(arg snapshot_jpeg_backend)" in launch
+hardware_contract = (root / "test/static_camera_hardware_contract.test").read_text(
+    encoding="utf-8"
+)
+assert '<arg name="snapshot_jpeg_backend" value="hardware"/>' in hardware_contract
+assert '<param name="expected_jpeg_backend" value="nvjpeg-cuda"/>' in hardware_contract
+assert '<param name="expect_jpeg_fallback" value="false"/>' in hardware_contract
 assert 'rospy.get_param("~enable_continuous_jpeg_preview", False)' in camera_contract
 assert "self._image_timer = None" in camera_contract
 assert "if self._continuous_jpeg_preview:" in camera_contract
