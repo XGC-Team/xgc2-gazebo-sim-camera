@@ -164,7 +164,6 @@ jobs:
             --ci-run-id "$GITHUB_RUN_ID" --ci-workflow "$GITHUB_WORKFLOW" \
             --ci-workflow-ref "$GITHUB_WORKFLOW_REF"
       - name: Upload trusted build output
-        if: ${{ inputs.prepare_action == 'release' }}
         uses: actions/upload-artifact@v4
         with:
           name: xgc2-gazebo-sim-camera-release-debs-${{ matrix.arch }}
@@ -173,4 +172,3 @@ jobs:
             .ci/build-manifests/*.json
           include-hidden-files: true
           retention-days: 14
-
