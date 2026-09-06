@@ -81,6 +81,7 @@
   <arg name="publish_truth_tf" default="true"/>
   <!-- Stable XGC-owned camera contract. The Gazebo topics above remain an
        implementation detail and are never required by visualization clients. -->
+  <arg name="calibration_root" default=""/>
   <arg name="publish_xgc_contract" default="true"/>
   <arg name="xgc_camera_info_topic" default="/xgc/camera/world/camera_info"/>
   <arg name="xgc_transform_topic" default="/xgc/camera/world/tf"/>
@@ -136,6 +137,7 @@
          CameraInfo uses the selected intrinsic YAML when supplied; the profile
          remains the pre-calibration fallback used by intrinsic capture itself.
          Still images are explicit source-control snapshots, not a ROS timer. -->
+    <param name="calibration_root" value="$(arg calibration_root)"/>
     <param name="camera_profile" value="$(arg camera_profile)"/>
     <param name="camera_name" value="$(arg camera_name)"/>
     <param name="camera_profiles_file" value="$(arg camera_profiles_file)"/>

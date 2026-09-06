@@ -2,13 +2,14 @@
 """Publish a world camera through the stable XGC camera contract.
 
 The world-camera product owns this contract. It publishes the explicitly
-selected intrinsic calibration and the frozen simulation extrinsics.
+selected intrinsic calibration and the current estimated simulation extrinsics.
 Live and recorded video uses the source plugin's encoded H264 topics. Explicit
 still-image capture uses the plugin's source-control snapshot transaction.
 """
 
 import math
 import re
+import threading
 from pathlib import Path
 
 import rospy
@@ -213,17 +214,66 @@ class CameraContractPublisher:
         )
         self._optical_rotation = quaternion_from_euler(-math.pi / 2.0, 0.0, -math.pi / 2.0)
 
+        self._pose_lock = threading.Lock()
+        self._selection_watcher = None
+        calibration_root = str(rospy.get_param("~calibration_root", "")).strip()
+        if calibration_root:
+            from xgc_camera_calibration.extrinsic_file_watcher import ExtrinsicSelectionWatcher
+            # Startup pose remains the workflow's explicit choice. Only subsequent
+            # saves replace the estimate; never move the Gazebo truth camera.
+            self._selection_watcher = ExtrinsicSelectionWatcher(
+                calibration_root, "sim", rospy.get_param("~camera_name"), require_update=True,
+            )
+
         transform_rate = float(rospy.get_param("~transform_publish_rate", 10.0))
         if transform_rate <= 0.0:
             raise ValueError("transform_publish_rate must be positive")
-        self._transform_timer = rospy.Timer(
-            rospy.Duration(1.0 / transform_rate),
-            self._publish_transforms,
-        )
+        if not math.isfinite(transform_rate):
+            raise ValueError("transform_publish_rate must be finite")
+        self._stop_event = threading.Event()
+        rospy.on_shutdown(self._stop_event.set)
+        self._transform_period = 1.0 / transform_rate
         # CameraInfo comes from the selected calibration file when supplied;
         # it is never inferred from image transport metadata.
         self._publish_camera_info(rospy.Time.now())
         self._publish_transforms()
+        self._transform_thread = threading.Thread(target=self._transform_loop, daemon=True)
+        self._transform_thread.start()
+
+    def _refresh_estimate(self):
+        if self._selection_watcher is None:
+            return
+        try:
+            revision = self._selection_watcher.next_revision()
+            if revision is None:
+                return
+            from xgc_camera_calibration.transforms import split_parent_to_optical_pose
+            from xgc_camera_calibration.extrinsic_coordinates import optical_translation_in_world
+            document = revision.document
+            if (document["parent_frame"] != self._parent_frame
+                    or document["child_frame"] != self._optical_frame):
+                raise ValueError("saved extrinsic frames do not match the active camera")
+            chain = split_parent_to_optical_pose(
+                optical_translation_in_world(document, None),
+                document["quaternion_xyzw_array"], (0.067, 0.0, 0.0),
+            )
+            with self._pose_lock:
+                self._translation = chain["parent_t_link"]
+                self._pose_rotation = chain["parent_q_link_xyzw"]
+            self._publish_transforms()
+            rospy.set_param("~active_extrinsic_file", str(revision.path))
+            rospy.set_param("~extrinsic_update_error", "")
+        except Exception as error:
+            rospy.set_param("~extrinsic_update_error", str(error))
+            rospy.logwarn_throttle(5.0, "Retaining camera estimate: %s", error)
+
+    def _transform_loop(self):
+        # Wall time keeps save consumption alive when Gazebo /clock is paused.
+        while not self._stop_event.wait(self._transform_period):
+            if rospy.is_shutdown():
+                return
+            self._refresh_estimate()
+            self._publish_transforms()
 
     def _publish_camera_info(self, stamp):
         output = CameraInfo()
@@ -257,12 +307,14 @@ class CameraContractPublisher:
 
     def _publish_transforms(self, _event=None):
         stamp = rospy.Time.now()
+        with self._pose_lock:
+            translation, rotation = self._translation, self._pose_rotation
         self._transform_publisher.publish(TFMessage(transforms=[
             _transform(
                 self._parent_frame,
                 self._camera_link_frame,
-                self._translation,
-                self._pose_rotation,
+                translation,
+                rotation,
                 stamp,
             ),
             _transform(
