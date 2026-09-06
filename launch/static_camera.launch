@@ -82,6 +82,7 @@
   <!-- Stable XGC-owned camera contract. The Gazebo topics above remain an
        implementation detail and are never required by visualization clients. -->
   <arg name="calibration_root" default=""/>
+  <arg name="contract_publisher_executable" default="camera_contract_publisher.py"/>
   <arg name="publish_xgc_contract" default="true"/>
   <arg name="xgc_camera_info_topic" default="/xgc/camera/world/camera_info"/>
   <arg name="xgc_transform_topic" default="/xgc/camera/world/tf"/>
@@ -131,7 +132,7 @@
           -x $(arg x) -y $(arg y) -z $(arg z) -R $(arg roll) -P $(arg pitch) -Y $(arg yaw)"/>
 
   <node if="$(arg publish_xgc_contract)"
-        pkg="gazebo_sim_camera" type="camera_contract_publisher.py"
+        pkg="gazebo_sim_camera" type="$(arg contract_publisher_executable)"
         name="$(arg model_name)_xgc_camera_contract" output="screen" required="true">
     <!-- This world-camera product owns the XGC CameraInfo/TF contract.
          CameraInfo uses the selected intrinsic YAML when supplied; the profile
