@@ -10,6 +10,7 @@ still-image capture uses the plugin's source-control snapshot transaction.
 import math
 import re
 import threading
+import time
 from pathlib import Path
 
 import rospy
@@ -222,8 +223,12 @@ class CameraContractPublisher:
             # Startup pose remains the workflow's explicit choice. Only subsequent
             # saves replace the estimate; never move the Gazebo truth camera.
             self._selection_watcher = ExtrinsicSelectionWatcher(
-                calibration_root, "sim", rospy.get_param("~camera_name"), require_update=True,
+                calibration_root, "sim", rospy.get_param("~camera_name"),
             )
+            try:
+                self._selection_watcher.next_revision()
+            except Exception as error:
+                rospy.set_param("~extrinsic_update_error", str(error))
 
         transform_rate = float(rospy.get_param("~transform_publish_rate", 10.0))
         if transform_rate <= 0.0:
@@ -269,10 +274,13 @@ class CameraContractPublisher:
 
     def _transform_loop(self):
         # Wall time keeps save consumption alive when Gazebo /clock is paused.
+        next_refresh = 0.0
         while not self._stop_event.wait(self._transform_period):
             if rospy.is_shutdown():
                 return
-            self._refresh_estimate()
+            if time.monotonic() >= next_refresh:
+                self._refresh_estimate()
+                next_refresh = time.monotonic() + 1.0
             self._publish_transforms()
 
     def _publish_camera_info(self, stamp):
