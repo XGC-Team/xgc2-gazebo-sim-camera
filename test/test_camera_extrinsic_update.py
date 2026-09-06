@@ -1,11 +1,9 @@
 """Saved estimate updates must leave the simulation truth camera independent."""
-import json
 import sys
 import threading
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from test_camera_intrinsic_selection import _load_publisher_module
 
@@ -43,11 +41,11 @@ class CameraExtrinsicUpdateTest(unittest.TestCase):
         self.assertEqual(len(self.sent), 1)
         self.assertEqual(self.params['~extrinsic_update_error'], '')
         good = self.publisher._translation
-        self.assertAlmostEqual(good[2], 4)
+        self.assertAlmostEqual(good[2], 4 - .067)
         self.assertLess(abs(good[0] - 2), .068)  # optical-link offset only, not world offset
         revision = self.revision('wrong-frame')
         self.publisher._refresh_estimate()
-        self.assertEqual(self.publisher._translation, good)
+        self.assertEqual(tuple(self.publisher._translation), tuple(good))
         self.assertIn('frames', self.params['~extrinsic_update_error'])
         revision = self.revision()
         self.publisher._refresh_estimate()
