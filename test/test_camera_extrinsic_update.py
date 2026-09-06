@@ -3,16 +3,29 @@ import sys
 import threading
 import types
 import unittest
+from unittest.mock import patch, Mock
 from pathlib import Path
 
 from test_camera_intrinsic_selection import _load_publisher_module
 
-CALIBRATION = Path(__file__).resolve().parents[4] / 'perception/calibration/camera-calibration/xgc_camera_calibration/src'
-sys.path.insert(0, str(CALIBRATION))
 
 
 class CameraExtrinsicUpdateTest(unittest.TestCase):
     def setUp(self):
+        # The calibration owner separately tests SE(3) arithmetic. Here exercise
+        # the publisher's real admission/error/update path at that package boundary.
+        transforms = types.ModuleType('xgc_camera_calibration.transforms')
+        transforms.split_parent_to_optical_pose = Mock(return_value={
+            'parent_t_link':(2, 3, 3.933), 'parent_q_link_xyzw':(0, 0, 0, 1)})
+        coordinates = types.ModuleType('xgc_camera_calibration.extrinsic_coordinates')
+        coordinates.optical_translation_in_world = Mock(return_value=(2, 3, 4))
+        modules = patch.dict(sys.modules, {
+            'xgc_camera_calibration':types.ModuleType('xgc_camera_calibration'),
+            transforms.__name__:transforms, coordinates.__name__:coordinates})
+        modules.start()
+        self.addCleanup(modules.stop)
+        self.coordinates = coordinates
+        self.transforms = transforms
         self.module = _load_publisher_module()
         self.publisher = self.module.CameraContractPublisher.__new__(self.module.CameraContractPublisher)
         self.publisher._pose_lock = threading.Lock()
@@ -40,6 +53,8 @@ class CameraExtrinsicUpdateTest(unittest.TestCase):
         self.publisher._refresh_estimate()
         self.assertEqual(len(self.sent), 1)
         self.assertEqual(self.params['~extrinsic_update_error'], '')
+        self.coordinates.optical_translation_in_world.assert_called_once_with(revision.document, None)
+        self.transforms.split_parent_to_optical_pose.assert_called_once_with((2, 3, 4), [0, 0, 0, 1], (.067, 0.0, 0.0))
         good = self.publisher._translation
         self.assertAlmostEqual(good[2], 4 - .067)
         self.assertLess(abs(good[0] - 2), .068)  # optical-link offset only, not world offset
