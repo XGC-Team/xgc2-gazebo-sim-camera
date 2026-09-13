@@ -21,9 +21,9 @@ using gazebo_sim_camera::RemoveStaleUnixSocket;
 
 TEST(UnixControlSocketPath, AcceptsCurrentMediaRuntimeNamespaces) {
   EXPECT_TRUE(IsXgc2PrivateMediaSocketPath(
-      "/run/xgc2-local-fleet/media/gazebo_world_camera.sock"));
+      "/run/xgc2-local-swarm/media/gazebo_world_camera.sock"));
   EXPECT_TRUE(
-      IsXgc2PrivateMediaSocketPath("/run/xgc2-local-fleet/media/usb_cam.sock"));
+      IsXgc2PrivateMediaSocketPath("/run/xgc2-local-swarm/media/usb_cam.sock"));
   EXPECT_TRUE(IsXgc2PrivateMediaSocketPath("/tmp/xgc2/media/usb_cam.sock"));
 }
 
@@ -44,10 +44,10 @@ TEST(UnixControlSocketPath, RejectsSocketsOutsidePrivateMediaRoots) {
 TEST(UnixControlSocketPath, RejectsEmptyRelativeAndTraversal) {
   EXPECT_FALSE(IsXgc2PrivateMediaSocketPath(""));
   EXPECT_FALSE(IsXgc2PrivateMediaSocketPath("gazebo_world_camera.sock"));
-  EXPECT_FALSE(IsXgc2PrivateMediaSocketPath("/run/xgc2-local-fleet/media/"));
-  EXPECT_FALSE(IsXgc2PrivateMediaSocketPath("/run/xgc2-local-fleet/media/foo"));
+  EXPECT_FALSE(IsXgc2PrivateMediaSocketPath("/run/xgc2-local-swarm/media/"));
+  EXPECT_FALSE(IsXgc2PrivateMediaSocketPath("/run/xgc2-local-swarm/media/foo"));
   EXPECT_FALSE(IsXgc2PrivateMediaSocketPath(
-      "/run/xgc2-local-fleet/media/../gazebo_world_camera.sock"));
+      "/run/xgc2-local-swarm/media/../gazebo_world_camera.sock"));
   EXPECT_FALSE(
       IsXgc2PrivateMediaSocketPath("/tmp/xgc2/media/../../../etc/passwd.sock"));
   EXPECT_FALSE(IsXgc2PrivateMediaSocketPath("/run/./xgc2/media/cam.sock"));
@@ -56,9 +56,9 @@ TEST(UnixControlSocketPath, RejectsEmptyRelativeAndTraversal) {
 
 TEST(UnixControlSocketPath, RejectsUnsafeNamesAndControls) {
   EXPECT_FALSE(
-      IsXgc2PrivateMediaSocketPath("/run/xgc2-local-fleet/media/.sock"));
+      IsXgc2PrivateMediaSocketPath("/run/xgc2-local-swarm/media/.sock"));
   EXPECT_FALSE(
-      IsXgc2PrivateMediaSocketPath("/run/xgc2-local-fleet/media/.hidden.sock"));
+      IsXgc2PrivateMediaSocketPath("/run/xgc2-local-swarm/media/.hidden.sock"));
   EXPECT_FALSE(IsXgc2PrivateMediaSocketPath("/tmp/xgc2/media/cam.sock/"));
   EXPECT_FALSE(IsXgc2PrivateMediaSocketPath("/tmp/xgc2/media/cam.sock extra"));
   EXPECT_FALSE(IsXgc2PrivateMediaSocketPath("/tmp/xgc2/media/cam\nsock.sock"));
@@ -165,7 +165,7 @@ TEST(UnixControlSocketRemoveLexical, RejectsUnsafePathsWithoutTouchingDisk) {
       RemoveStaleUnixSocket("/run/docker.sock"),
       "control socket path is not under an XGC2 private media runtime root");
   EXPECT_EQ(
-      RemoveStaleUnixSocket("/run/xgc2-local-fleet/media/../cam.sock"),
+      RemoveStaleUnixSocket("/run/xgc2-local-swarm/media/../cam.sock"),
       "control socket path is not under an XGC2 private media runtime root");
 }
 

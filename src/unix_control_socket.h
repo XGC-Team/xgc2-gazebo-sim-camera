@@ -23,12 +23,12 @@ inline constexpr std::size_t MaxUnixSocketPathBytes() {
 // Current namespaces for this capture-source plugin. They are two live product
 // roots, each a current media runtime:
 //   /tmp/xgc2/media/              Gazebo camera package and catalog default
-//   /run/xgc2-local-fleet/media/  local-fleet station runtime
+//   /run/xgc2-local-swarm/media/  local-swarm station runtime
 // Other XGC2 products keep their own roots (for example
 // /run/xgc2-agent/media/).
 inline constexpr std::string_view kPrivateMediaRuntimeRoots[] = {
     "/tmp/xgc2/media/",
-    "/run/xgc2-local-fleet/media/",
+    "/run/xgc2-local-swarm/media/",
 };
 
 inline bool IsSafeUnixSocketFileName(std::string_view name) {

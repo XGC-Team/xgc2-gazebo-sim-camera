@@ -50,7 +50,7 @@ assert "listen(controlListener_" not in media_plugin
 assert 'rfind("/tmp/xgc2/media/"' not in media_plugin
 assert "kPrivateMediaRuntimeRoots" in unix_socket
 assert '"/tmp/xgc2/media/"' in unix_socket
-assert '"/run/xgc2-local-fleet/media/"' in unix_socket
+assert '"/run/xgc2-local-swarm/media/"' in unix_socket
 assert "legacy" not in unix_socket.lower()
 assert "fallback" not in unix_socket.lower()
 assert "docker.sock" not in unix_socket
