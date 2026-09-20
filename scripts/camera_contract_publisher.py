@@ -216,19 +216,21 @@ class CameraContractPublisher:
         self._optical_rotation = quaternion_from_euler(-math.pi / 2.0, 0.0, -math.pi / 2.0)
 
         self._pose_lock = threading.Lock()
-        self._selection_watcher = None
-        calibration_root = str(rospy.get_param("~calibration_root", "")).strip()
-        if calibration_root:
-            from xgc_camera_calibration.extrinsic_file_watcher import ExtrinsicSelectionWatcher
-            # Startup pose remains the workflow's explicit choice. Only subsequent
-            # saves replace the estimate; never move the Gazebo truth camera.
-            self._selection_watcher = ExtrinsicSelectionWatcher(
-                calibration_root, "sim", rospy.get_param("~camera_name"),
-            )
-            try:
-                self._selection_watcher.next_revision()
-            except Exception as error:
-                rospy.set_param("~extrinsic_update_error", str(error))
+        self._application = None
+        frozen_json = str(rospy.get_param("~resolved_extrinsic_json", ""))
+        if frozen_json:
+            from xgc_camera_calibration.extrinsic_application import ExtrinsicApplication, parse_frame_roles
+            roles = parse_frame_roles(rospy.get_param("~frame_roles_json"))
+            if self._parent_frame != roles["parentFrame"] or self._optical_frame != roles["opticalFrames"]["sim"]:
+                raise ValueError("Gazebo output frames do not match the controlled camera roles")
+            self._application = ExtrinsicApplication(
+                str(rospy.get_param("~calibration_root")), rospy.get_param("~camera_name"),
+                frozen_json, roles,
+                lambda state: rospy.set_param("~extrinsic_application_state", state))
+            if self._application.frozen["status"] != "uncalibrated":
+                self._set_frozen_estimate(self._application.frozen)
+        # Non-calibrating standalone/intrinsic camera launches retain their
+        # explicit spawn pose and have no selection consumer at all.
 
         transform_rate = float(rospy.get_param("~transform_publish_rate", 10.0))
         if transform_rate <= 0.0:
@@ -242,35 +244,46 @@ class CameraContractPublisher:
         # it is never inferred from image transport metadata.
         self._publish_camera_info(rospy.Time.now())
         self._publish_transforms()
+        if self._application is not None:
+            self._application.initial_published()
+            rospy.on_shutdown(self._close_application)
         self._transform_thread = threading.Thread(target=self._transform_loop, daemon=True)
         self._transform_thread.start()
 
+    def _set_frozen_estimate(self, frozen):
+        from xgc_camera_calibration.transforms import split_parent_to_optical_pose
+        pose = frozen["resolvedOpticalPose"]
+        chain = split_parent_to_optical_pose(pose["translation"], pose["quaternionXyzw"], (0.067, 0., 0.))
+        with self._pose_lock:
+            self._translation = chain["parent_t_link"]
+            self._pose_rotation = chain["parent_q_link_xyzw"]
+
+    def _apply_estimate(self, frozen):
+        # This changes only the TF estimate. It never sends Gazebo model state
+        # or changes the spawn arguments / physical truth camera.
+        with self._pose_lock:
+            previous = (self._translation, self._pose_rotation)
+        self._set_frozen_estimate(frozen)
+        try:
+            self._publish_transforms()
+        except Exception:
+            with self._pose_lock:
+                self._translation, self._pose_rotation = previous
+            raise
+
     def _refresh_estimate(self):
-        if self._selection_watcher is None:
+        if self._application is None:
             return
         try:
-            revision = self._selection_watcher.next_revision()
-            if revision is None:
-                return
-            from xgc_camera_calibration.transforms import split_parent_to_optical_pose
-            from xgc_camera_calibration.extrinsic_coordinates import optical_translation_in_world
-            document = revision.document
-            if (document["parent_frame"] != self._parent_frame
-                    or document["child_frame"] != self._optical_frame):
-                raise ValueError("saved extrinsic frames do not match the active camera")
-            chain = split_parent_to_optical_pose(
-                optical_translation_in_world(document, None),
-                document["quaternion_xyzw_array"], (0.067, 0.0, 0.0),
-            )
-            with self._pose_lock:
-                self._translation = chain["parent_t_link"]
-                self._pose_rotation = chain["parent_q_link_xyzw"]
-            self._publish_transforms()
-            rospy.set_param("~active_extrinsic_file", str(revision.path))
+            self._application.tick(self._apply_estimate)
             rospy.set_param("~extrinsic_update_error", "")
         except Exception as error:
             rospy.set_param("~extrinsic_update_error", str(error))
-            rospy.logwarn_throttle(5.0, "Retaining camera estimate: %s", error)
+            rospy.logwarn_throttle(5.0, "Camera application is not confirmed: %s", error)
+
+    def _close_application(self):
+        self._application.ready = False
+        self._application.project(self._application.state())
 
     def _transform_loop(self):
         # Wall time keeps save consumption alive when Gazebo /clock is paused.
