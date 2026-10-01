@@ -14,6 +14,14 @@ callback. The callback copies the already encoded AU into an eight-frame queue
 (configurable from 1 to 128); a worker thread owns ROS serialization and
 publication.
 
+## GPU requirements
+
+The encoder uses NVENC SDK 13.0.19 with the P4 low-latency preset. Linux
+requires NVIDIA driver 570 or newer and a GPU with H264 NVENC support. CMake
+fetches the official codec headers at a fixed version and verifies SHA-256;
+the system SDK 9 headers are not used. The GPU hardware contract requires
+live encoded frames and hardware JPEG snapshots.
+
 ## Topics
 
 The default source publishes:

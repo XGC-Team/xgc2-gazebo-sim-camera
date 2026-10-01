@@ -8,7 +8,6 @@
 
   <buildtool_depend>catkin</buildtool_depend>
   <build_depend>gazebo_dev</build_depend>
-  <build_depend>libffmpeg-nvenc-dev</build_depend>
   <build_depend>libjpeg-dev</build_depend>
   <build_depend>libgl1-mesa-dev</build_depend>
   <build_depend>libglew-dev</build_depend>

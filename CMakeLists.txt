@@ -11,6 +11,18 @@ find_package(GLEW REQUIRED)
 find_package(JPEG REQUIRED)
 find_package(OpenGL REQUIRED)
 
+# One NVENC API contract for all supported drivers (Linux >= 570).
+# Focal's distribution headers expose the removed SDK 9 presets.
+include(FetchContent)
+FetchContent_Declare(xgc_nv_codec_headers
+  URL https://codeload.github.com/FFmpeg/nv-codec-headers/tar.gz/refs/tags/n13.0.19.0
+  URL_HASH SHA256=86d15d1a7c0ac73a0eafdfc57bebfeba7da8264595bf531cf4d8db1c22940116
+)
+FetchContent_GetProperties(xgc_nv_codec_headers)
+if(NOT xgc_nv_codec_headers_POPULATED)
+  FetchContent_Populate(xgc_nv_codec_headers)
+endif()
+
 option(XGC_BUILD_NVJPEG_BACKEND "Build the optional CUDA/nvJPEG snapshot module" OFF)
 
 catkin_package(
@@ -24,7 +36,8 @@ add_library(xgc_gazebo_media_camera SHARED
 )
 target_compile_features(xgc_gazebo_media_camera PRIVATE cxx_std_17)
 add_dependencies(xgc_gazebo_media_camera ${catkin_EXPORTED_TARGETS})
-target_include_directories(xgc_gazebo_media_camera PRIVATE
+target_include_directories(xgc_gazebo_media_camera BEFORE PRIVATE
+  ${xgc_nv_codec_headers_SOURCE_DIR}/include
   ${catkin_INCLUDE_DIRS}
   ${GAZEBO_INCLUDE_DIRS}
   ${GLEW_INCLUDE_DIRS}

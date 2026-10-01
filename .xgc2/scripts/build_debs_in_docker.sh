@@ -37,10 +37,6 @@ docker run --rm \
     apt-get install -y --no-install-recommends \
       ros-noetic-xgc2-camera-msgs \
       ros-noetic-xgc2-gazebo-sim-worlds
-    dpkg-query -W libffmpeg-nvenc-dev >/dev/null || {
-      echo "XGC2 build image is missing required package: libffmpeg-nvenc-dev" >&2
-      exit 1
-    }
     rm -rf /workspace/work/src /workspace/work/build /workspace/work/devel /workspace/work/install-root
     mkdir -p /workspace/work/src/gazebo-camera
     rsync -a --delete /workspace/repo/ /workspace/work/src/gazebo-camera/

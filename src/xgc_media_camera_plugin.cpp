@@ -2118,7 +2118,7 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     }
     api_ = {};
     api_.version = NV_ENCODE_API_FUNCTION_LIST_VER;
-    if (createInstance(&api_) != NV_ENC_SUCCESS || !api_.nvEncOpenEncodeSessionEx || !api_.nvEncInitializeEncoder) {
+    if (createInstance(&api_) != NV_ENC_SUCCESS || !api_.nvEncOpenEncodeSessionEx || !api_.nvEncInitializeEncoder || !api_.nvEncGetEncodePresetConfigEx) {
       LogEncoderError("NVENC API initialization failed");
       DestroyEncoder();
       return false;
@@ -2136,7 +2136,7 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     NV_ENC_PRESET_CONFIG preset{};
     preset.version = NV_ENC_PRESET_CONFIG_VER;
     preset.presetCfg.version = NV_ENC_CONFIG_VER;
-    if (api_.nvEncGetEncodePresetConfig(encoder_, NV_ENC_CODEC_H264_GUID, NV_ENC_PRESET_LOW_LATENCY_HQ_GUID, &preset) != NV_ENC_SUCCESS) {
+    if (api_.nvEncGetEncodePresetConfigEx(encoder_, NV_ENC_CODEC_H264_GUID, NV_ENC_PRESET_P4_GUID, NV_ENC_TUNING_INFO_LOW_LATENCY, &preset) != NV_ENC_SUCCESS) {
       LogEncoderError("NVENC low-latency H264 preset is unavailable");
       DestroyEncoder();
       return false;
@@ -2176,7 +2176,8 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     NV_ENC_INITIALIZE_PARAMS initialization{};
     initialization.version = NV_ENC_INITIALIZE_PARAMS_VER;
     initialization.encodeGUID = NV_ENC_CODEC_H264_GUID;
-    initialization.presetGUID = NV_ENC_PRESET_LOW_LATENCY_HQ_GUID;
+    initialization.presetGUID = NV_ENC_PRESET_P4_GUID;
+    initialization.tuningInfo = NV_ENC_TUNING_INFO_LOW_LATENCY;
     initialization.encodeWidth = width;
     initialization.encodeHeight = height;
     initialization.darWidth = width;

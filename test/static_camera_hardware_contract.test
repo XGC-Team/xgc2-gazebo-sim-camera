@@ -33,7 +33,7 @@
     <param name="video_topic" value="/xgc/test/hardware_camera/video_h264"/>
     <param name="frame_timing_topic" value="/xgc/test/hardware_camera/frame_timing"/>
     <param name="camera_info_topic" value="/xgc/camera/world/camera_info"/>
-    <param name="expect_encoded_frames" value="false"/>
+    <param name="expect_encoded_frames" value="true"/>
     <param name="expected_jpeg_policy" value="hardware"/>
     <param name="expected_jpeg_backend" value="nvjpeg-cuda"/>
     <param name="expected_jpeg_hardware_state" value="available"/>
