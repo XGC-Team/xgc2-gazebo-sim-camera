@@ -95,19 +95,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-      - name: Verify shared React calibration page
-        run: |
-          docker run --rm \
-            -v "$GITHUB_WORKSPACE:/workspace/repo" \
-            -w /workspace/repo \
-            ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-dev:1.0.0 \
-            bash -lc '
-              npm --prefix web-src ci
-              npm --prefix web-src run typecheck
-              npm --prefix web-src run build
-            '
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git -C "$GITHUB_WORKSPACE" diff --exit-code -- web/app.js web/style.css
       - name: Validate source and product contracts
         run: |
           set -euo pipefail

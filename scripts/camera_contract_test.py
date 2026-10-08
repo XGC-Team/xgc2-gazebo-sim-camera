@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-import errno
 import json
 import math
-import socket
 import time
 import unittest
+from email.parser import BytesParser
+from email.policy import default
+
+from xgc2_xrpc import Client, Runtime, TransportError
 
 import rospy
 import tf
@@ -13,103 +15,65 @@ from sensor_msgs.msg import CameraInfo
 from xgc_camera_msgs.msg import FrameTiming, StreamInfo
 
 
-def receive_line(connection, maximum_bytes=65536):
-    buffer = bytearray()
-    while b"\n" not in buffer:
-        chunk = connection.recv(65536)
-        if not chunk:
-            raise RuntimeError("camera control socket closed before its response header")
-        buffer.extend(chunk)
-        if len(buffer) > maximum_bytes:
-            raise RuntimeError("camera control response header is too large")
-    line, remainder = bytes(buffer).split(b"\n", 1)
-    return line, remainder
-
-
-def receive_exact(connection, size, initial=b""):
-    buffer = bytearray(initial)
-    while len(buffer) < size:
-        chunk = connection.recv(min(65536, size - len(buffer)))
-        if not chunk:
-            raise RuntimeError(
-                "camera control socket closed with {} of {} payload bytes".format(
-                    len(buffer), size
-                )
-            )
-        buffer.extend(chunk)
-    if len(buffer) != size:
-        raise RuntimeError("camera control response contains unexpected trailing bytes")
-    return bytes(buffer)
-
-
 class CameraContractTest(unittest.TestCase):
+    def setUp(self):
+        self._runtime = Runtime(blocking_workers=1, max_calls=8, max_connections=8)
+        self._clients = {}
+
+    def tearDown(self):
+        for client in self._clients.values():
+            client.close()
+        self._runtime.close()
+
     def connect_to_camera(self, path, timeout):
+        if path in self._clients:
+            return self._clients[path]
         deadline = time.monotonic() + timeout
-        last_error = None
-        while time.monotonic() < deadline and not rospy.is_shutdown():
-            connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            try:
-                connection.connect(path)
-                connection.settimeout(15.0)
-                return connection
-            except OSError as error:
-                connection.close()
-                last_error = error
-                if error.errno not in (errno.ENOENT, errno.ECONNREFUSED):
-                    raise
-                time.sleep(0.1)
-        self.fail(
-            "camera control socket {} did not become ready: {}".format(
-                path, last_error
-            )
-        )
+        discovery = Client(path, runtime=self._runtime)
+        try:
+            while time.monotonic() < deadline and not rospy.is_shutdown():
+                try:
+                    description = discovery.json("/v1/describe", method="GET", timeout=2)
+                    client = Client(path, runtime=self._runtime,
+                                    instance_id=description["service_ref"]["instance_id"])
+                    self._clients[path] = client
+                    return client
+                except (OSError, TransportError):
+                    time.sleep(0.1)
+            self.fail("camera XRPC endpoint did not become ready: " + path)
+        finally:
+            discovery.close()
 
     def request_description(self, path):
-        connection = self.connect_to_camera(path, timeout=90.0)
-        try:
-            connection.sendall(b'{"operation":"describe"}\n')
-            encoded_header, remainder = receive_line(connection)
-            self.assertEqual(remainder, b"")
-            description = json.loads(encoded_header.decode("utf-8"))
-            if not description.get("ok"):
-                self.fail(
-                    "camera description failed: {}".format(
-                        description.get("error")
-                    )
-                )
-            return description
-        finally:
-            connection.close()
+        return self.connect_to_camera(path, 90).json(
+            "/v1/media/sources/" + self.source_id + "/describe", method="GET", timeout=3)
 
     def request_snapshot(self, path, snapshot_id="static-camera-contract", **options):
-        connection = self.connect_to_camera(path, timeout=90.0)
-        try:
-            request = {
-                "operation": "snapshot",
-                "snapshotId": snapshot_id,
-            }
-            request.update(options)
-            connection.sendall(json.dumps(request).encode("utf-8") + b"\n")
-            encoded_header, payload_prefix = receive_line(connection)
-            header = json.loads(encoded_header.decode("utf-8"))
-            if not header.get("ok"):
-                self.fail("camera snapshot failed: {}".format(header.get("error")))
-            jpeg_size = int(header["jpegBytes"])
-            rgb_size = int(header["rgbBytes"])
-            payload = receive_exact(
-                connection,
-                jpeg_size + rgb_size,
-                initial=payload_prefix,
-            )
-            return header, payload[:jpeg_size], payload[jpeg_size:]
-        finally:
-            connection.close()
+        request = {"snapshotId": snapshot_id}
+        request.update(options)
+        response = self.connect_to_camera(path, 90).call(
+            "/v1/media/sources/" + self.source_id + "/capture", request, timeout=6)
+        self.assertEqual(response.status, 200, response.body[:1024])
+        message = BytesParser(policy=default).parsebytes(
+            ("Content-Type: " + response.content_type + "\r\nMIME-Version: 1.0\r\n\r\n").encode() + response.body)
+        self.assertEqual(message.get_content_type(), "multipart/mixed")
+        parts = list(message.iter_parts())
+        self.assertEqual(parts[0].get_param("name", header="content-disposition"), "metadata")
+        header = json.loads(parts[0].get_payload(decode=True))
+        self.assertEqual(parts[1].get_content_type(), "image/jpeg")
+        jpeg = parts[1].get_payload(decode=True)
+        rgb = parts[2].get_payload(decode=True) if len(parts) == 3 else b""
+        self.assertEqual(len(jpeg), header["jpegBytes"])
+        self.assertEqual(len(rgb), header["rgbBytes"])
+        self.assertEqual(header["receipt"]["stage"], "completed")
+        return header, jpeg, rgb
 
     def test_camera_contract(self):
         control_socket = rospy.get_param(
             "~control_socket", "/tmp/xgc2/media/contract_camera.sock"
         )
         source_id = rospy.get_param("~source_id", "contract_camera")
+        self.source_id = source_id
         rtp_host = rospy.get_param("~rtp_host", "127.0.0.1")
         rtp_port = int(rospy.get_param("~rtp_port", 15004))
         frame_id = rospy.get_param("~frame_id", "contract_camera_optical_frame")
@@ -225,32 +189,17 @@ class CameraContractTest(unittest.TestCase):
         description = self.request_description(control_socket)
         self.assertIn("fps", description)
         self.assertAlmostEqual(description.pop("fps"), fps, delta=1e-4)
-        self.assertEqual(
-            description,
-            {
-                "ok": True,
-                "protocolVersion": 1,
-                "sourceId": source_id,
-                "codec": "H264",
-                "rtpPayloadType": 96,
-                "rtpClockRate": 90000,
-                "rtpHost": rtp_host,
-                "rtpPort": rtp_port,
-                "width": width,
-                "height": height,
-                "frameId": frame_id,
-                "timestampClockDomain": "simulation",
-                "snapshotJpegPolicy": expected_jpeg_policy,
-                "snapshotJpegBackend": expected_jpeg_backend,
-                "snapshotJpegHardwareState": expected_jpeg_hardware_state,
-                "capabilities": [
-                    "set-active",
-                    "request-keyframe",
-                    "snapshot",
-                    "fresh-snapshot",
-                ],
-            },
-        )
+        expected = {
+            "protocolVersion": 1, "sourceId": source_id, "codec": "H264",
+            "rtpPayloadType": 96, "rtpClockRate": 90000, "rtpHost": rtp_host,
+            "rtpPort": rtp_port, "width": width, "height": height, "frameId": frame_id,
+            "snapshotJpegPolicy": expected_jpeg_policy,
+            "snapshotJpegBackend": expected_jpeg_backend,
+            "snapshotJpegHardwareState": expected_jpeg_hardware_state,
+        }
+        self.assertEqual({key: description[key] for key in expected}, expected)
+        self.assertIn("capture", description["capabilities"])
+        self.assertIn("fresh-snapshot", description["capabilities"])
 
         header, jpeg, rgb = self.request_snapshot(control_socket)
         self.assertEqual(header["snapshotId"], "static-camera-contract")

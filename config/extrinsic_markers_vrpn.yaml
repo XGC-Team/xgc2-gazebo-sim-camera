@@ -1,4 +1,3 @@
-model_states_topic: /gazebo/model_states
 bind_address: ""
 port: 3883
 publish_rate: 60.0

@@ -3,6 +3,9 @@
   <arg name="paused" default="false"/>
   <arg name="gui" default="true"/>
   <arg name="model_name" default="gazebo_static_camera"/>
+  <arg name="simulation_service_ref_json"/>
+  <arg name="target_id"/>
+  <arg name="world"/>
   <arg name="camera_link_frame" default="usb_cam_link"/>
   <arg name="optical_frame" default="usb_cam_optical_frame"/>
   <arg name="gt_camera_link_frame" default="usb_cam_link_gt"/>
@@ -15,7 +18,10 @@
   <arg name="fps" default="profile"/>
   <arg name="media_source_id" default="usb_cam"/>
   <arg name="media_rtp_port" default="5004"/>
-  <arg name="media_control_socket" default="/tmp/xgc2/media/usb_cam.sock"/>
+  <arg name="media_control_endpoint"/>
+  <arg name="media_control_target_id"/>
+  <arg name="python_executable"/>
+  <arg name="media_control_instance_id" default=""/>
   <arg name="publish_encoded_video" default="true"/>
   <arg name="encoded_video_topic" default="/xgc/camera/world/video_h264"/>
   <arg name="frame_timing_topic" default="/xgc/camera/world/frame_timing"/>
@@ -29,17 +35,21 @@
   <arg name="camera_roll" default="0.0"/><arg name="camera_pitch" default="0.0"/><arg name="camera_yaw" default="0.0"/>
   <arg name="mode" default="truth"/>
   <arg name="publish_truth_tf" default="true"/>
-  <arg name="start_vrpn" default="true"/>
+  <arg name="vrpn_config"/>
+  <arg name="start_marker_data_client" default="false"/>
   <arg name="vrpn_port" default="3883"/>
-  <!-- Stamp received poses in the local ROS clock so they share Gazebo /clock
-       with image_raw. VRPN server wall time is intentionally not propagated. -->
-  <arg name="vrpn_use_server_time" default="false"/>
+  <!-- Marker-only ROS data is an optional calibration algorithm input.
+       Canonical vehicle localization and PX4 vision remain owned by Adapter. -->
+  <arg name="vrpn_use_server_time" default="true"/>
 
   <include file="$(dirname)/static_camera.launch">
-    <arg name="world" value="$(find gazebo_sim_worlds)/worlds/camera_calibration_extrinsic/camera_calibration_extrinsic.world"/>
+    <arg name="world" value="$(arg world)"/>
+    <arg name="vrpn_config" value="$(arg vrpn_config)"/>
     <arg name="paused" value="$(arg paused)"/>
     <arg name="gui" value="$(arg gui)"/>
     <arg name="model_name" value="$(arg model_name)"/>
+    <arg name="simulation_service_ref_json" value="$(arg simulation_service_ref_json)"/>
+    <arg name="target_id" value="$(arg target_id)"/>
     <arg name="camera_link_frame" value="$(arg camera_link_frame)"/>
     <arg name="optical_frame" value="$(arg optical_frame)"/>
     <arg name="gt_camera_link_frame" value="$(arg gt_camera_link_frame)"/>
@@ -50,7 +60,10 @@
     <arg name="fps" value="$(arg fps)"/>
     <arg name="media_source_id" value="$(arg media_source_id)"/>
     <arg name="media_rtp_port" value="$(arg media_rtp_port)"/>
-    <arg name="media_control_socket" value="$(arg media_control_socket)"/>
+    <arg name="media_control_endpoint" value="$(arg media_control_endpoint)"/>
+    <arg name="media_control_target_id" value="$(arg media_control_target_id)"/>
+    <arg name="python_executable" value="$(arg python_executable)"/>
+    <arg name="media_control_instance_id" value="$(arg media_control_instance_id)"/>
     <arg name="publish_encoded_video" value="$(arg publish_encoded_video)"/>
     <arg name="encoded_video_topic" value="$(arg encoded_video_topic)"/>
     <arg name="frame_timing_topic" value="$(arg frame_timing_topic)"/>
@@ -69,14 +82,10 @@
   <!-- The six colored markers (model://cal_marker_*) are composed into the
        shared camera_calibration_extrinsic world; no separate spawn is needed. -->
 
-  <group if="$(arg start_vrpn)">
-    <include file="$(find gazebo_sim_vrpn_bridge)/launch/vrpn_server.launch">
-      <arg name="config_file" value="$(find gazebo_sim_camera)/config/extrinsic_markers_vrpn.yaml"/>
-      <arg name="port" value="$(arg vrpn_port)"/>
-    </include>
+  <group if="$(arg start_marker_data_client)">
     <include file="$(find gazebo_sim_vrpn_bridge)/launch/vrpn_client.launch">
       <arg name="server" value="127.0.0.1"/><arg name="port" value="$(arg vrpn_port)"/>
-      <arg name="frame_id" value="map"/><arg name="use_server_time" value="$(arg vrpn_use_server_time)"/>
+      <arg name="frame_id" value="world"/><arg name="use_server_time" value="$(arg vrpn_use_server_time)"/>
       <arg name="trackers" value="[cal_marker_01,cal_marker_02,cal_marker_03,cal_marker_04,cal_marker_05,cal_marker_06]"/>
     </include>
   </group>

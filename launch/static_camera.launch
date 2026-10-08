@@ -5,9 +5,12 @@
   <arg name="keyboard_gui" default="false"/>
   <arg name="use_sim_time" default="true"/>
   <arg name="start_gazebo" default="true"/>
-  <arg name="world" default="$(find gazebo_sim_worlds)/worlds/empty/empty.world"/>
+  <arg name="vrpn_config" default=""/>
+  <arg name="world"/>
 
   <arg name="model_name" default="gazebo_static_camera"/>
+  <arg name="simulation_service_ref_json"/>
+  <arg name="target_id"/>
   <arg name="camera_link_frame" default="usb_cam_link"/>
   <arg name="optical_frame" default="usb_cam_optical_frame"/>
   <arg name="camera_profile" default="world_wide_4k30_110"/>
@@ -22,7 +25,10 @@
   <arg name="media_source_id" default="usb_cam"/>
   <arg name="media_rtp_host" default="127.0.0.1"/>
   <arg name="media_rtp_port" default="5004"/>
-  <arg name="media_control_socket" default="/tmp/xgc2/media/usb_cam.sock"/>
+  <arg name="media_control_endpoint"/>
+  <arg name="media_control_target_id"/>
+  <arg name="python_executable"/>
+  <arg name="media_control_instance_id" default=""/>
   <arg name="publish_encoded_video" default="true"/>
   <arg name="encoded_video_topic" default="/xgc/camera/world/video_h264"/>
   <arg name="frame_timing_topic" default="/xgc/camera/world/frame_timing"/>
@@ -61,8 +67,8 @@
   <arg name="far_clip" default="profile"/>
   <arg name="noise_stddev" default="profile"/>
   <!-- static:=true pins the fixed-site camera (default product behavior).
-       static:=false keeps it in physics with gravity off so it floats and can
-       be repositioned via the /gazebo/set_model_state topic. -->
+       static:=false keeps it in physics with gravity off. Native pose control
+       uses the world-owned simulation-v1 provider. -->
   <arg name="static" default="true"/>
 
   <arg name="x" default="-4.0"/>
@@ -89,13 +95,14 @@
   <arg name="xgc_transform_topic" default="/xgc/camera/world/tf"/>
 
   <param name="use_sim_time" value="$(arg use_sim_time)"/>
-  <include if="$(arg start_gazebo)" file="$(find gazebo_ros)/launch/empty_world.launch">
-    <arg name="world_name" value="$(arg world)"/>
+  <!-- world is the SDF artifact produced by the explicit native provider
+       prepare phase, including the authored simulation-v1 socket binding. -->
+  <include if="$(arg start_gazebo)" file="$(find gazebo_sim_worlds)/launch/native_world.launch">
+    <arg name="world" value="$(arg world)"/>
     <arg name="paused" value="$(arg paused)"/>
-    <!-- empty_world.launch cannot pass GUI client plugins, so start a
-         keyboard-enabled client explicitly below when requested. -->
     <arg name="gui" value="$(eval arg('gui') and not arg('keyboard_gui'))"/>
-    <arg name="use_sim_time" value="$(arg use_sim_time)"/>
+    <arg name="ros_data" value="true"/>
+    <arg name="vrpn_config" value="$(arg vrpn_config)"/>
   </include>
 
   <node if="$(eval arg('gui') and arg('keyboard_gui'))"
@@ -115,12 +122,14 @@
            near_clip:=$(arg near_clip) far_clip:=$(arg far_clip) noise_stddev:=$(arg noise_stddev)
            static:=$(arg static)
            media_source_id:=$(arg media_source_id) media_rtp_host:=$(arg media_rtp_host)
-           media_rtp_port:=$(arg media_rtp_port) media_control_socket:=$(arg media_control_socket)
+           media_rtp_port:=$(arg media_rtp_port) media_control_endpoint:=$(arg media_control_endpoint) media_control_target_id:=$(arg media_control_target_id)
+           media_control_instance_id:=$(arg media_control_instance_id)
            snapshot_pose_frame_id:=$(arg snapshot_pose_frame_id)
            publish_encoded_video:=$(arg publish_encoded_video)
            encoded_video_topic:=$(arg encoded_video_topic)
            frame_timing_topic:=$(arg frame_timing_topic)
            stream_info_topic:=$(arg stream_info_topic)
+           camera_info_topic:=$(arg xgc_camera_info_topic)
            encoded_publisher_queue_capacity:=$(arg encoded_publisher_queue_capacity)
            media_bitrate:=$(arg media_bitrate) media_max_bitrate:=$(arg media_max_bitrate)
            media_pacing_bitrate:=$(arg media_pacing_bitrate)
@@ -128,12 +137,15 @@
            snapshot_jpeg_quality:=$(arg snapshot_jpeg_quality)
            snapshot_jpeg_backend:=$(arg snapshot_jpeg_backend)"/>
 
-  <node pkg="gazebo_ros" type="spawn_model" name="spawn_$(arg model_name)" output="screen"
-        args="-urdf -param $(arg model_name)_description -model $(arg model_name)
-          -x $(arg x) -y $(arg y) -z $(arg z) -R $(arg roll) -P $(arg pitch) -Y $(arg yaw)"/>
+  <node pkg="gazebo_sim_camera" type="native_camera_entity.py" launch-prefix="$(arg python_executable)"
+        name="$(arg model_name)_native_entity" output="screen" required="true"
+        args="--simulation-service-ref-json '$(arg simulation_service_ref_json)' --target-id $(arg target_id) --model-name $(arg model_name)
+          --description-param $(arg model_name)_description
+          --x $(arg x) --y $(arg y) --z $(arg z)
+          --roll $(arg roll) --pitch $(arg pitch) --yaw $(arg yaw)"/>
 
   <node if="$(arg publish_xgc_contract)"
-        pkg="gazebo_sim_camera" type="camera_contract_publisher.py"
+        pkg="gazebo_sim_camera" type="camera_contract_publisher.py" launch-prefix="$(arg python_executable)"
         name="$(arg model_name)_xgc_camera_contract" output="screen" required="true">
     <!-- This world-camera product owns the XGC CameraInfo/TF contract.
          CameraInfo uses the selected intrinsic YAML when supplied; the profile
@@ -149,7 +161,9 @@
     <param name="width" value="$(arg width)"/>
     <param name="height" value="$(arg height)"/>
     <param name="hfov_degrees" value="$(arg hfov_degrees)"/>
-    <param name="output_camera_info_topic" value="$(arg xgc_camera_info_topic)"/>
+    <param name="media_source_id" value="$(arg media_source_id)"/>
+    <param name="media_control_endpoint" value="$(arg media_control_endpoint)"/>
+    <param name="media_control_target_id" value="$(arg media_control_target_id)"/>
     <param name="output_transform_topic" value="$(arg xgc_transform_topic)"/>
     <param name="parent_frame" value="$(arg parent_frame)"/>
     <!-- CameraInfo and camera-local TF share the exact frames embedded by the
@@ -165,14 +179,6 @@
     <param name="yaw" value="$(arg yaw)"/>
     <param name="transform_publish_rate" value="10"/>
   </node>
-
-  <!-- spawn_model exits after insertion. Keep roslaunch alive whenever this
-       launch has no TF publisher, so XGC can supervise and stop the managed
-       camera process for the lifetime of the experiment. -->
-  <node if="$(eval arg('mode') == 'calibration' or not arg('publish_truth_tf'))"
-        pkg="gazebo_sim_camera" type="camera_lifecycle_keepalive.py"
-        name="$(arg model_name)_lifecycle_keepalive" output="screen"
-        required="true"/>
 
   <group if="$(eval arg('mode') == 'truth' and arg('publish_truth_tf'))">
     <node pkg="tf" type="static_transform_publisher" name="$(arg model_name)_truth_pose"
@@ -191,4 +197,5 @@
           args="0.067 0 0 -1.5707963267948966 0 -1.5707963267948966
             $(arg gt_camera_link_frame) $(arg gt_optical_frame) 100"/>
   </group>
+
 </launch>

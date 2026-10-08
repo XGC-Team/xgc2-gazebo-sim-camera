@@ -23,7 +23,7 @@ preserved for every frame. See
 topics, rosbag commands, epoch semantics, and replay guidance.
 
 The live WebUI path does not publish raw or periodic JPEG video through ROS. The camera
-plugin exposes a private Unix control socket under `/tmp/xgc2/media/`; the media
+plugin exposes a XRPC HTTP source service in the granted private runtime directory; the media
 edge activates the sensor only while a consumer needs live video. An explicit
 snapshot request renders one fresh frame and returns its JPEG, optional RGB
 pixels, source timestamp, pinhole camera matrix, zero-distortion vector, and the exact
@@ -74,28 +74,19 @@ The default instance uses:
 
 - media source ID `usb_cam`;
 - RTP destination `127.0.0.1:5004`;
-- control socket `/tmp/xgc2/media/usb_cam.sock`;
+- shared XRPC endpoint `/tmp/xgc2/media/camera-source.sock`;
 - frames `usb_cam_link -> usb_cam_optical_frame`.
 
 The optical-frame joint uses the REP-103 rotation
 `rpy=(-pi/2, 0, -pi/2)`. A second instance must use a distinct model name,
-source ID, RTP port, control socket, camera-link frame, and optical frame.
+source ID, RTP port, camera-link frame, and optical frame. All sensors in one world share the same XRPC endpoint.
 
-The source-control protocol is newline-delimited JSON. A media edge can verify
-the source it is paired with before activating rendering:
-
-```json
-{"operation":"describe"}
-```
-
-The response reports protocol version 1, the resolved Gazebo sensor dimensions
-and update rate, H264/RTP payload type 96 at a 90 kHz clock, the actual loopback
-RTP host and port, the source and frame IDs, and the supported `set-active`,
-`request-keyframe`, `snapshot`, and `fresh-snapshot` operations, plus the JPEG
-policy/actual-backend/hardware-state diagnostics. Media Edge validates these
-values before opening its RTP listener, so a mismatched camera/edge port fails
-at startup instead of leaving a silent source. `describe` is side-effect free
-and remains available while the sensor and NVENC encoder are inactive.
+The native source service uses the official XRPC SDK. Discover the bounded
+source registry with `GET /v1/media/sources`, then use its fenced ServiceRef
+for source status, start/stop, configuration, keyframe and same-frame capture.
+The exact routes, revision/receipt semantics and resource/storage limits are
+specified in [source_control.md](docs/source_control.md). The old JSON-line
+socket operations have been removed.
 
 ## World camera profiles
 
@@ -108,14 +99,22 @@ per-instance launch parameters.
 | --- | --- | --- | --- |
 | `world_wide_4k30_110` (default) | 3840×2160 at 30 fps | 110° | 24 / 36 / 72 Mbit/s |
 
-Select a complete parameter group with:
+The workflow owner explicitly starts the prepared native world and supplies its
+complete simulation ServiceRef and target grant. Select a complete parameter
+group with:
 
 ```bash
 roslaunch gazebo_sim_camera static_camera.launch \
-  camera_profile:=world_wide_4k30_110 gui:=true
+  world:=/absolute/prepared-camera.world \
+  simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
+  media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
+  python_executable:="$CAMERA_PYTHON_EXECUTABLE" camera_profile:=world_wide_4k30_110 gui:=false
 
 roslaunch gazebo_sim_camera static_camera.launch \
-  camera_profile:=world_wide_4k30_110 gui:=true
+  world:=/absolute/prepared-camera.world \
+  simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
+  media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
+  python_executable:="$CAMERA_PYTHON_EXECUTABLE" camera_profile:=world_wide_4k30_110 gui:=false
 ```
 
 For direct developer launches, `width`, `height`, `fps`, `hfov_degrees`,
@@ -144,9 +143,12 @@ optics profile:
 roslaunch gazebo_sim_camera static_camera.launch \
   camera_profile:=world_wide_4k30_110 \
   model_name:=yard_camera \
+  world:=/absolute/prepared-camera.world \
+  simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
   media_source_id:=yard_cam \
   media_rtp_port:=5010 \
-  media_control_socket:=/tmp/xgc2/media/yard_cam.sock \
+  media_control_endpoint:=/explicit/owned/runtime/camera-source.sock \
+  media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$CAMERA_PYTHON_EXECUTABLE" \
   camera_link_frame:=yard_cam_link \
   optical_frame:=yard_cam_optical_frame \
   x:=-3 y:=2 z:=2 yaw:=-0.3
@@ -171,19 +173,29 @@ through the same `static_camera.launch` workflow:
 
 ```bash
 roslaunch gazebo_sim_camera intrinsic_calibration_world.launch \
-  camera_profile:=world_wide_4k30_110 gui:=true
+  world:=/absolute/prepared-camera.world \
+  simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
+  media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
+  python_executable:="$CAMERA_PYTHON_EXECUTABLE" camera_profile:=world_wide_4k30_110 gui:=false
 
 roslaunch gazebo_sim_camera extrinsic_calibration_world.launch \
   camera_profile:=world_wide_4k30_110 \
-  mode:=calibration publish_truth_tf:=false
+  world:=/absolute/prepared-extrinsic.world \
+  simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
+  vrpn_config:=/absolute/extrinsic_markers_vrpn.yaml \
+  media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
+  python_executable:="$CAMERA_PYTHON_EXECUTABLE" mode:=calibration publish_truth_tf:=false
 ```
 
 The intrinsic scene composes the field-matched
 `model://aprilgrid_6x6_tag36h11_88mm`: IDs 0–35, 88 mm tags and 26.4 mm gaps,
 generated from Kalibr's official AprilGrid exporter. The extrinsic scene
 composes the six `model://cal_marker_*` assets and can start the shared VRPN
-bridge. The intrinsic launch spawns the camera with `static:=false` and gravity
-disabled, allowing `/gazebo/set_model_state` and the keyboard teleop to move it.
+source through the explicit native_world launcher vrpn_config. The prepared
+world must declare required_component vrpn. Optional start_marker_data_client
+exports only the six calibration markers as ROS algorithm input; Adapter owns
+canonical vehicle localization and PX4 vision. The intrinsic launch spawns the camera with `static:=false` and gravity
+disabled, allowing simulation-v1 state operations and the keyboard teleop to move it.
 The standalone launch defaults to `static:=true`.
 
 This is a separate world from the retained 8×6 checkerboard scene. Use
@@ -212,16 +224,14 @@ pose.
 
 The XGC2 central process catalog, not this product, owns ProcessDefinition
 `gazebo-static-camera`. It exposes `cameraProfile` as an enum synchronized with
-the checked-in YAML. Model/frame identity, source ID, RTP port, control socket,
-pose, and TF mode remain ordinary process parameters. Readiness is the presence
-of the private control socket, not a ROS image topic. This Debian package does
+the checked-in YAML. Model/frame identity, source ID, RTP port, control endpoint,
+pose, and TF mode remain ordinary process parameters. Readiness uses native
+source lifecycle and applied receipts on its private XRPC endpoint. This Debian package does
 not install files under `/usr/share/xgc2/process-definitions`.
 
 ## Test and package
 
 ```bash
-npm --prefix web-src ci
-npm --prefix web-src run build
 source /opt/ros/noetic/setup.bash
 python3 test/test_world_camera_profiles.py
 python3 test/static_product_contract.py
@@ -231,18 +241,16 @@ catkin_make run_tests_gazebo_sim_camera
 catkin_test_results
 ```
 
-The packaged calibration page is a deterministic React build consuming the
-immutable `@xgc2/ui-react` `0.15.8` release for its shell, single-title topbar,
-themes, panels, controls, feedback, progress, code results, responsive layout,
-and scrollbars. Gazebo transport and the interactive sample-guide canvas remain
-product-specific. CI and release jobs rebuild `web/app.js` and `web/style.css`
-and reject source/generated drift.
+The camera calibration product owns calibration sessions, saved candidates and
+their UI. This product supplies native camera capture, camera movement and
+revision-fenced calibration metadata application. Applying estimates publishes
+CameraInfo while preserving native optical intrinsics and capture truth.
 
 The profile unit test validates schema bounds and expands every named profile
 through xacro. While the source is inactive, the Gazebo contract first calls
 `describe` and validates the actual source identity, H264/RTP contract and
 loopback endpoint, dimensions, frame rate, frame ID, and capabilities. It then
-requests both a legacy JPEG+RGB snapshot and a fresh JPEG-only transaction;
+requests both a same-frame JPEG+RGB capture and a fresh JPEG-only transaction;
 it validates dimensions, increasing source timestamps, backend/readback
 diagnostics, JPEG/RGB payloads, pinhole intrinsics, render pose, pose-frame
 identity, and TF without requiring NVENC video encoding in the test.

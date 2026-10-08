@@ -7,6 +7,8 @@ import math
 import re
 import subprocess
 import sys
+if sys.version_info < (3, 10):
+    raise RuntimeError("the selected camera interpreter must provide Python >= 3.10 and the formal XRPC wheel")
 
 import numpy as np
 import rospy
@@ -140,6 +142,8 @@ def apply_key(key, pose, initial_pose, linear_step, angular_step):
 def parser():
     result = argparse.ArgumentParser(description="Control a Gazebo camera from GUI keypresses.")
     result.add_argument("--model-name", default="gazebo_static_camera")
+    result.add_argument("--simulation-service-ref-json", required=True)
+    result.add_argument("--target-id", required=True)
     result.add_argument("--linear-step", type=float, default=0.15)
     result.add_argument("--angular-step", type=float, default=0.05)
     result.add_argument("--minimum-step-scale", type=float, default=0.125)
@@ -151,7 +155,7 @@ def parser():
 def main():
     args = parser().parse_args(rospy.myargv(argv=sys.argv)[1:])
     rospy.init_node("gazebo_camera_keyboard_teleop")
-    controller = GazeboModelController(args.model_name)
+    controller = GazeboModelController(args.model_name, service_ref_json=args.simulation_service_ref_json, target_id=args.target_id)
     pose = controller.current_pose()
     initial_pose = controller.current_pose()
     linear_step = args.linear_step
@@ -223,6 +227,7 @@ def main():
                 process.wait(timeout=2.0)
             except subprocess.TimeoutExpired:
                 process.kill()
+        controller.close()
     return 0
 
 

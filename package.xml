@@ -9,19 +9,20 @@
   <buildtool_depend>catkin</buildtool_depend>
   <build_depend>gazebo_dev</build_depend>
   <build_depend>libjpeg-dev</build_depend>
+  <build_depend>libjsoncpp-dev</build_depend>
+  <build_export_depend>libjsoncpp-dev</build_export_depend>
   <build_depend>libgl1-mesa-dev</build_depend>
   <build_depend>libglew-dev</build_depend>
   <depend>foxglove_msgs</depend>
   <depend>roscpp</depend>
   <depend>xgc_camera_msgs</depend>
-  <exec_depend>gazebo_msgs</exec_depend>
   <exec_depend>gazebo_ros</exec_depend>
   <exec_depend>rospy</exec_depend>
-  <exec_depend>sensor_msgs</exec_depend>
+  <depend>sensor_msgs</depend>
+  <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>tf</exec_depend>
   <exec_depend>tf2_msgs</exec_depend>
   <exec_depend>xacro</exec_depend>
-  <exec_depend>camera_calibration</exec_depend>
   <exec_depend>xgc_camera_calibration</exec_depend>
   <exec_depend>gazebo_plugins</exec_depend>
   <exec_depend>python3-numpy</exec_depend>

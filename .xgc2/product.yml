@@ -1,7 +1,7 @@
 schema: xgc2.product.v1
 id: xgc2-gazebo-sim-camera
 name: XGC2 Gazebo Sim Camera
-version: 0.1.0-27
+version: 0.1.0-28
 kind: ros1-apt
 summary: Profile-driven GPU-rendered H264 world camera and calibration scenes for
   Gazebo Classic 11.
@@ -26,8 +26,6 @@ apt:
   - python3-numpy
   - python3-opencv
   - python3-yaml
-  - ros-noetic-camera-calibration
-  - ros-noetic-gazebo-msgs
   - ros-noetic-gazebo-plugins
   - ros-noetic-gazebo-ros
   - ros-noetic-foxglove-msgs
@@ -37,34 +35,43 @@ apt:
   - ros-noetic-rostopic
   - ros-noetic-rviz
   - ros-noetic-sensor-msgs
+  - ros-noetic-geometry-msgs
+  - ros-noetic-tf2-msgs
   - ros-noetic-tf
   - ros-noetic-xacro
   - ros-noetic-xgc2-camera-msgs (>= 1.2.0-8)
   - ros-noetic-xgc2-camera-calibration (>= 0.3.0-40)
-  - ros-noetic-xgc2-gazebo-sim-worlds (>= 1.1.0-14)
+  - ros-noetic-xgc2-gazebo-sim-worlds (>= 1.4.1-4)
+  - libxgc2-xrpc1 (>= 0.1.0)
   recommends:
-  - ros-noetic-xgc2-gazebo-sim-vrpn-bridge (>= 1.1.0-13)
+  - ros-noetic-xgc2-gazebo-sim-vrpn-bridge (>= 1.1.0-27)
 usage:
   install: 'sudo apt update
 
     sudo apt install ros-noetic-xgc2-gazebo-sim-camera
 
     '
-  smoke_test: 'roslaunch --files gazebo_sim_camera static_camera.launch gui:=false
-
-    roslaunch --files gazebo_sim_camera intrinsic_calibration_world.launch gui:=false
-
-    roslaunch --files gazebo_sim_camera extrinsic_calibration_world.launch gui:=false
-    start_vrpn:=false
-
-    '
+  smoke_test: |
+    roslaunch --files gazebo_sim_camera static_camera.launch gui:=false \
+      world:="$SIMULATION_WORLD_FILE" simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
+      media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON"
+    roslaunch --files gazebo_sim_camera intrinsic_calibration_world.launch gui:=false \
+      world:="$SIMULATION_WORLD_FILE" simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
+      media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON"
+    roslaunch --files gazebo_sim_camera extrinsic_calibration_world.launch gui:=false vrpn_config:="$VRPN_CONFIG_FILE" \
+      world:="$SIMULATION_WORLD_FILE" simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
+      media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON"
   notes: 'This product owns only an independent fixed-site camera. It does not modify
 
     or depend on any FS150, Scout, UAV, or other vehicle camera model.
 
     XGC2 owns the ProcessDefinition centrally; this package owns the Gazebo source
 
-    plugin and ROS package only.
+    plugin and ROS package only. Python XRPC consumers require an explicitly
+
+    selected interpreter >=3.10 with the released XRPC wheel and ROS modules
+
+    installed in that interpreter. Stock Focal Python 3.8 is insufficient.
 
     '
 ownership:
@@ -74,11 +81,13 @@ ownership:
   - /opt/ros/noetic/lib/libxgc_gazebo_media_camera.so
 release:
   requires:
+  - xgc2-xrpc
   - xgc2-ros-msgs
   - xgc2-camera-calibration-ros1
   - xgc2-gazebo-sim-scenes
   - xgc2-gazebo-sim-vrpn-bridge
   dependency_policy:
+    xgc2-xrpc: verify
     xgc2-ros-msgs: rebuild
     xgc2-camera-calibration-ros1: verify
     xgc2-gazebo-sim-vrpn-bridge: verify
@@ -88,4 +97,4 @@ release:
   workflow: release.yml
   ci_workflow: ci.yml
   apt_versions:
-    focal: 0.1.0-27
+    focal: 0.1.0-28

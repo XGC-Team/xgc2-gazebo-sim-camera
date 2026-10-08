@@ -13,16 +13,13 @@ intrinsic = (root / "launch/intrinsic_calibration_world.launch").read_text(
 extrinsic = (root / "launch/extrinsic_calibration_world.launch").read_text(
     encoding="utf-8"
 )
-keepalive = (root / "scripts/camera_lifecycle_keepalive.py").read_text(
-    encoding="utf-8"
-)
 camera_contract = (root / "scripts/camera_contract_publisher.py").read_text(
     encoding="utf-8"
 )
 media_plugin = (root / "src/xgc_media_camera_plugin.cpp").read_text(
     encoding="utf-8"
 )
-unix_socket = (root / "src/unix_control_socket.h").read_text(encoding="utf-8")
+control_host = (root / "src/camera_source_control.cpp").read_text(encoding="utf-8")
 cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
 docker_build = (root / ".xgc2/scripts/build_debs_in_docker.sh").read_text(
     encoding="utf-8"
@@ -40,29 +37,13 @@ assert "optical_origin_x" in xacro
 assert "<pose>${optical_origin_x} 0 0 0 0 0</pose>" in xacro
 assert 'xyz="${optical_origin_x} 0 0"' in xacro
 assert "args=\"0.067 0 0 -1.5707963267948966 0 -1.5707963267948966" in launch
-assert '#include "unix_control_socket.h"' in media_plugin
-assert "IsXgc2PrivateMediaSocketPath" in media_plugin
-assert "BindAndListenUnixControlSocket" in media_plugin
-assert "CloseListeningUnixControlSocket" in media_plugin
-assert "EnsurePrivateMediaSocketParent" in unix_socket
-assert "RemoveStaleUnixSocket" in unix_socket
-assert "listen(controlListener_" not in media_plugin
-assert 'rfind("/tmp/xgc2/media/"' not in media_plugin
-assert "kPrivateMediaRuntimeRoots" in unix_socket
-assert '"/tmp/xgc2/media/"' in unix_socket
-assert '"/run/xgc2-local-swarm/media/"' in unix_socket
-assert "legacy" not in unix_socket.lower()
-assert "fallback" not in unix_socket.lower()
-assert "docker.sock" not in unix_socket
-assert "IsXgc2PrivateMediaSocketPath" in unix_socket
-assert "CheckMediaRuntimeAncestors" in unix_socket
-assert "AT_SYMLINK_NOFOLLOW" in unix_socket
-assert "O_NOFOLLOW" in unix_socket
-assert "RemoveStaleUnixSocket" in unix_socket
-assert "BindAndListenUnixControlSocket" in unix_socket
-assert "CloseListeningUnixControlSocket" in unix_socket
-assert "listen(fd, 8)" in unix_socket
-assert "if (!rosConsumersActive_.load())" in media_plugin
+assert '#include "camera_source_control.h"' in media_plugin
+assert "CameraSourceControlHost::Acquire" in media_plugin
+assert "xgc2::xrpc::HttpServer" in control_host
+assert "rejectDupKeys" in control_host
+assert "ReadControlLine" not in media_plugin
+assert not (root / "src/unix_control_socket.h").exists()
+assert "rosConsumersActive_.load()" in media_plugin
 assert "rosFreshRenderGeneration_.fetch_add(1);" in media_plugin
 assert {
     profile["lens"]["horizontal_fov_degrees"]
@@ -79,7 +60,7 @@ assert '<xacro:arg name="media_plugin_filename" default="libxgc_gazebo_media_cam
 assert 'filename="$(arg media_plugin_filename)"' in xacro
 assert "<sourceId>$(arg media_source_id)</sourceId>" in xacro
 assert "<rtpPort>$(arg media_rtp_port)</rtpPort>" in xacro
-assert "<controlSocket>$(arg media_control_socket)</controlSocket>" in xacro
+assert "<controlEndpoint>$(arg media_control_endpoint)</controlEndpoint>" in xacro
 assert "<snapshotPoseFrameId>$(arg snapshot_pose_frame_id)</snapshotPoseFrameId>" in xacro
 assert "<rosPublishEnabled>$(arg publish_encoded_video)</rosPublishEnabled>" in xacro
 assert "<rosVideoTopic>$(arg encoded_video_topic)</rosVideoTopic>" in xacro
@@ -141,14 +122,11 @@ assert 'type="keyboard_camera_teleop.py"' in intrinsic
 assert "arg('mode') == 'truth'" in launch
 assert "arg('mode') == 'validation'" in launch
 assert "gt_camera_link_frame" in launch and "gt_optical_frame" in launch
-assert "arg('mode') == 'calibration' or not arg('publish_truth_tf')" in launch
-assert 'type="camera_lifecycle_keepalive.py"' in launch
-assert 'name="$(arg model_name)_lifecycle_keepalive"' in launch
-assert 'rospy.init_node("camera_lifecycle_keepalive")' in keepalive
-assert "rospy.spin()" in keepalive
-assert "scripts/camera_lifecycle_keepalive.py" in cmake
-assert "test_unix_control_socket" in cmake
-assert "media_control_socket:=$(arg media_control_socket)" in launch
+assert 'type="native_camera_entity.py"' in launch
+assert "scripts/native_camera_entity.py" in cmake
+assert "camera_source_control_test" in cmake
+assert "spawn_model" not in launch
+assert "media_control_endpoint:=$(arg media_control_endpoint)" in launch
 assert 'name="camera_profile" value="$(arg camera_profile)"' in launch
 assert '<arg name="camera_name" default="usb_cam"/>' in launch
 assert 'name="camera_name" value="$(arg camera_name)"' in launch
@@ -160,8 +138,8 @@ assert 'path.parent.parent.name != "sim"' in camera_contract
 assert 'document.get("camera_name", "")' in camera_contract
 assert "_CAMERA_NAME_PATTERN.fullmatch(camera_name)" in camera_contract
 assert "path.parent.name != camera_name" in camera_contract
-assert 'JSONBoolean(*request, "includeRgb")' in media_plugin
-assert 'JSONBoolean(*request, "requestKeyframe")' in media_plugin
+assert 'input.get("includeRgb", true)' in media_plugin
+assert 'input.get("requestKeyframe", false)' in media_plugin
 assert "fresh-snapshot" in media_plugin
 assert 'SDFValue<std::string>(sdf, "snapshotJpegBackend", "auto")' in media_plugin
 assert "ParseSnapshotJpegPolicy" in media_plugin
@@ -179,8 +157,10 @@ assert '<param name="expected_jpeg_backend" value="nvjpeg-cuda"/>' in hardware_c
 assert '<param name="expect_jpeg_fallback" value="false"/>' in hardware_contract
 assert "CompressedImage" not in camera_contract
 assert "_publish_media_snapshot" not in camera_contract
-assert "self._publish_camera_info(rospy.Time.now())" in camera_contract
-assert "0.0, 0.0, 1.0," in camera_contract
+assert "self._apply_camera_info_metadata()" in camera_contract
+assert "CameraInfo()" not in camera_contract
+assert "expected_revision" in camera_contract
+assert "calibration-metadata" in camera_contract
 assert "(0.067, 0.0, 0.0)" in camera_contract
 
 assert "foxglove_msgs::CompressedVideo" in media_plugin
@@ -194,8 +174,8 @@ assert "timing.mapping_uncertainty_ns = 0" in media_plugin
 assert 'kSourceTimestampClockDomain = "simulation"' in media_plugin
 assert "timestampClockDomain" in media_plugin
 assert "camera_->WorldPose()" in media_plugin
-assert '\\"renderPose\\"' in media_plugin
-assert '\\"poseFrameId\\"' in media_plugin
+assert 'metadata["renderPose"]' in media_plugin
+assert 'metadata["poseFrameId"]' in media_plugin
 assert "ROSPublisherLoop" in media_plugin
 assert "DISCONTINUITY_QUEUE_OVERFLOW" in media_plugin
 assert "if (rosWaitingForIDR_ && !keyframe)" in media_plugin

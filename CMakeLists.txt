@@ -1,15 +1,18 @@
-cmake_minimum_required(VERSION 3.0.2)
+cmake_minimum_required(VERSION 3.16)
 project(gazebo_sim_camera)
 
 find_package(catkin REQUIRED COMPONENTS
   foxglove_msgs
   roscpp
+  sensor_msgs
   xgc_camera_msgs
 )
 find_package(gazebo REQUIRED)
 find_package(GLEW REQUIRED)
 find_package(JPEG REQUIRED)
 find_package(OpenGL REQUIRED)
+find_package(XgcXrpc CONFIG REQUIRED)
+find_package(jsoncpp 1.9.4 CONFIG REQUIRED)
 
 # One NVENC API contract for all supported drivers (Linux >= 570).
 # Focal's distribution headers expose the removed SDK 9 presets.
@@ -27,8 +30,13 @@ option(XGC_BUILD_NVJPEG_BACKEND "Build the optional CUDA/nvJPEG snapshot module"
 
 catkin_package(
   LIBRARIES xgc_gazebo_media_camera
-  CATKIN_DEPENDS foxglove_msgs roscpp xgc_camera_msgs
+  CATKIN_DEPENDS foxglove_msgs roscpp sensor_msgs xgc_camera_msgs
 )
+
+add_library(xgc_camera_source_control STATIC src/camera_source_control.cpp)
+set_target_properties(xgc_camera_source_control PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_compile_features(xgc_camera_source_control PRIVATE cxx_std_20)
+target_link_libraries(xgc_camera_source_control PRIVATE XgcXrpc::http JsonCpp::JsonCpp)
 
 add_library(xgc_gazebo_media_camera SHARED
   src/snapshot_jpeg_backend.cpp
@@ -48,6 +56,8 @@ target_link_libraries(xgc_gazebo_media_camera
   ${GLEW_LIBRARIES}
   JPEG::JPEG
   OpenGL::GL
+  xgc_camera_source_control
+  JsonCpp::JsonCpp
   dl
 )
 
@@ -103,12 +113,11 @@ install(TARGETS xgc_gazebo_media_camera
 )
 
 catkin_install_python(PROGRAMS
-  scripts/camera_lifecycle_keepalive.py
+  scripts/native_camera_entity.py
   scripts/camera_contract_publisher.py
   scripts/camera_contract_test.py
   scripts/drive_intrinsic_calibration.py
   scripts/keyboard_camera_teleop.py
-  scripts/web_calibration.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
@@ -120,7 +129,6 @@ install(DIRECTORY
   src
   test
   urdf
-  web
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
   USE_SOURCE_PERMISSIONS
 )
@@ -168,18 +176,13 @@ if(CATKIN_ENABLE_TESTING)
     target_link_libraries(test_snapshot_jpeg_backend JPEG::JPEG dl)
     add_dependencies(test_snapshot_jpeg_backend test_snapshot_jpeg_hardware_plugin)
   endif()
-  catkin_add_gtest(test_unix_control_socket
-    test/test_unix_control_socket.cpp
-  )
-  if(TARGET test_unix_control_socket)
-    target_compile_features(test_unix_control_socket PRIVATE cxx_std_17)
-    target_include_directories(test_unix_control_socket PRIVATE
-      ${CMAKE_CURRENT_SOURCE_DIR}/src
-    )
-  endif()
+  add_executable(camera_source_control_test test/camera_source_control_test.cpp src/camera_source_control.cpp)
+  target_compile_features(camera_source_control_test PRIVATE cxx_std_20)
+  target_include_directories(camera_source_control_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  target_link_libraries(camera_source_control_test XgcXrpc::http JsonCpp::JsonCpp)
+  add_test(NAME camera_source_control COMMAND camera_source_control_test)
   catkin_add_nosetests(test/test_intrinsic_sweep.py)
   catkin_add_nosetests(test/test_keyboard_camera_teleop.py)
-  catkin_add_nosetests(test/test_web_calibration.py)
   catkin_add_nosetests(test/test_world_camera_profiles.py)
   add_rostest(test/static_camera_contract.test)
 endif()

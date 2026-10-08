@@ -5,14 +5,18 @@ import argparse
 import copy
 import math
 import sys
+if sys.version_info < (3, 10):
+    raise RuntimeError("the selected camera interpreter must provide Python >= 3.10 and the formal XRPC wheel")
 import time
 
 import cv2
 import numpy as np
 import rospy
-from gazebo_msgs.msg import ModelState, ModelStates
+from geometry_msgs.msg import Pose
+from xgc2_xrpc import Client, Fault, Runtime
 from sensor_msgs.msg import Image
 from tf.transformations import quaternion_from_euler
+from native_camera_entity import bind_simulation_service
 
 
 PARAMETER_RANGES = (0.7, 0.7, 0.4, 0.5)
@@ -140,66 +144,68 @@ def look_at_orientation(position, target, yaw_offset=0.0, pitch_offset=0.0, roll
 
 
 class GazeboModelController:
-    """Move a Gazebo model over the /gazebo/set_model_state topic.
+    """Camera pose control through the world-owned simulation-v1 provider.
 
-    Gazebo's gazebo_ros_api_plugin subscribes to /gazebo/set_model_state
-    (gazebo_msgs/ModelState) as a fire-and-forget alternative to the service of
-    the same name, so publishing returns no success flag.  The constructor waits
-    for Gazebo to subscribe so the first pose update is not dropped on the
-    still-connecting topic.  Poses only take effect on a non-static model, so the
-    camera must be spawned with static:=false (see fixed_rgb_camera.urdf.xacro).
+    An EntityRef generation fences removal/replacement. Completion comes from
+    the provider's native operation wait, never from a ROS state sample.
+    User images and calibration observations continue using ROS data topics.
     """
-
-    def __init__(self, model_name, reference_frame="world", connection_timeout=10.0):
+    def __init__(self, model_name, reference_frame="world", connection_timeout=10.0,
+                 service_ref_json=None, target_id=None, runtime=None):
+        if reference_frame != "world":
+            raise ValueError("simulation-v1 camera poses use the declared world frame")
         self.model_name = model_name
-        self.reference_frame = reference_frame
-        self._publisher = rospy.Publisher(
-            "/gazebo/set_model_state", ModelState, queue_size=1
-        )
-        self._wait_for_subscriber(connection_timeout)
+        self._owns_runtime = runtime is None
+        self._runtime = runtime or Runtime(blocking_workers=1, max_calls=8, max_connections=8)
+        self._client = None
+        try:
+            self._client, _ = bind_simulation_service(service_ref_json, target_id, self._runtime)
+            self._reference = self._entity()["ref"]
+        except BaseException:
+            if self._client is not None:
+                self._client.close()
+            if self._owns_runtime:
+                self._runtime.close()
+            raise
 
-    def _wait_for_subscriber(self, timeout):
-        deadline = time.monotonic() + timeout
-        while not rospy.is_shutdown() and self._publisher.get_num_connections() == 0:
-            if time.monotonic() >= deadline:
-                rospy.logwarn(
-                    "No subscriber on /gazebo/set_model_state after %.1fs; the "
-                    "first pose updates may be dropped until Gazebo connects.",
-                    timeout,
-                )
-                return
-            time.sleep(0.05)
+    def close(self):
+        self._client.close()
+        if self._owns_runtime:
+            self._runtime.close()
 
-    def _publish_state(self, state):
-        state.model_name = self.model_name
-        state.reference_frame = self.reference_frame
-        self._publisher.publish(state)
+    def _entity(self):
+        result = self._client.json("/v1/entities/" + self.model_name, method="GET", timeout=5)
+        entities = result.get("entities", [])
+        if len(entities) != 1 or entities[0]["ref"]["id"] != self.model_name:
+            raise RuntimeError("simulation provider did not return the camera EntityRef")
+        if hasattr(self, "_reference") and entities[0]["ref"] != self._reference:
+            raise RuntimeError("camera entity was replaced; generation no longer matches")
+        return entities[0]
 
     def current_pose(self):
-        states = rospy.wait_for_message("/gazebo/model_states", ModelStates, timeout=5.0)
-        try:
-            index = states.name.index(self.model_name)
-        except ValueError:
-            raise RuntimeError("Gazebo model is not present: {}".format(self.model_name))
-        return copy.deepcopy(states.pose[index])
+        state = self._entity()["state"]["pose"]
+        pose = Pose()
+        pose.position.x, pose.position.y, pose.position.z = state["position"]
+        pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = state["orientation"]
+        return pose
 
     def set_pose(self, pose):
-        state = ModelState()
-        state.pose = pose
-        self._publish_state(state)
+        state = {"position": [pose.position.x, pose.position.y, pose.position.z],
+                 "orientation": [pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]}
+        operation = self._client.json("/v1/entities/" + self.model_name + "/state",
+                                      {"generation": self._reference["generation"],
+                                       "operation_timeout_ms": 5000, "state": {"pose": state}}, timeout=3)
+        completed = self._client.json("/v1/operations/" + operation["id"] + "/wait", {}, timeout=6)
+        if completed.get("state") != "succeeded":
+            raise RuntimeError("native camera pose application failed: " + str(completed.get("error", completed)))
+        return completed
 
     def set_view(self, position, target, yaw_offset=0.0, pitch_offset=0.0, roll=0.0):
-        state = ModelState()
-        state.pose.position.x, state.pose.position.y, state.pose.position.z = position
-        (
-            state.pose.orientation.x,
-            state.pose.orientation.y,
-            state.pose.orientation.z,
-            state.pose.orientation.w,
-        ) = look_at_orientation(
-            position, target, yaw_offset=yaw_offset, pitch_offset=pitch_offset, roll=roll
-        )
-        self._publish_state(state)
+        pose = Pose()
+        pose.position.x, pose.position.y, pose.position.z = position
+        pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = look_at_orientation(
+            position, target, yaw_offset=yaw_offset, pitch_offset=pitch_offset, roll=roll)
+        return self.set_pose(pose)
 
 
 def calibration_views(target=(2.0, 0.0, 2.2)):
@@ -249,6 +255,8 @@ def parser():
         description="Move a Gazebo camera until ROS camera_calibration progress is covered."
     )
     result.add_argument("--model-name", default="gazebo_static_camera")
+    result.add_argument("--simulation-service-ref-json", required=True)
+    result.add_argument("--target-id", required=True)
     result.add_argument("--image-topic", default="/usb_cam/image_raw")
     result.add_argument("--board-size", type=parse_board_size, default=parse_board_size("7x5"))
     result.add_argument("--board-x", type=float, default=2.0)
@@ -265,7 +273,7 @@ def parser():
 def main():
     args = parser().parse_args(rospy.myargv(argv=sys.argv)[1:])
     rospy.init_node("gazebo_camera_intrinsic_calibration_driver")
-    controller = GazeboModelController(args.model_name)
+    controller = GazeboModelController(args.model_name, service_ref_json=args.simulation_service_ref_json, target_id=args.target_id)
     original_pose = controller.current_pose()
     target = (args.board_x, args.board_y, args.board_z)
     samples = []
@@ -313,8 +321,9 @@ def main():
             try:
                 controller.set_pose(original_pose)
                 rospy.loginfo("Restored %s to its original pose", args.model_name)
-            except (rospy.ROSException, RuntimeError) as error:
+            except (rospy.ROSException, RuntimeError, Fault) as error:
                 rospy.logerr("Could not restore original camera pose: %s", error)
+        controller.close()
     if not complete:
         rospy.logerr("Pose sweep ended before all four progress ranges were covered")
         return 2

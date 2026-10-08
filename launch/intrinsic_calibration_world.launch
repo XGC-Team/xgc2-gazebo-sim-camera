@@ -9,6 +9,9 @@
        teleop and drive_intrinsic_calibration.py can actually reposition it. -->
   <arg name="camera_static" default="false"/>
   <arg name="model_name" default="gazebo_static_camera"/>
+  <arg name="simulation_service_ref_json"/>
+  <arg name="target_id"/>
+  <arg name="world"/>
   <arg name="camera_link_frame" default="usb_cam_link"/>
   <arg name="optical_frame" default="usb_cam_optical_frame"/>
   <arg name="camera_profile" default="world_wide_4k30_110"/>
@@ -19,7 +22,10 @@
   <arg name="fps" default="profile"/>
   <arg name="media_source_id" default="usb_cam"/>
   <arg name="media_rtp_port" default="5004"/>
-  <arg name="media_control_socket" default="/tmp/xgc2/media/usb_cam.sock"/>
+  <arg name="media_control_endpoint"/>
+  <arg name="media_control_target_id"/>
+  <arg name="python_executable"/>
+  <arg name="media_control_instance_id" default=""/>
   <arg name="publish_encoded_video" default="true"/>
   <arg name="encoded_video_topic" default="/xgc/camera/world/video_h264"/>
   <arg name="frame_timing_topic" default="/xgc/camera/world/frame_timing"/>
@@ -35,11 +41,13 @@
   <arg name="board_roll" default="0.0"/><arg name="board_pitch" default="0.0"/><arg name="board_yaw" default="0.0"/>
 
   <include file="$(dirname)/static_camera.launch">
-    <arg name="world" value="$(find gazebo_sim_worlds)/worlds/camera_calibration_intrinsic_aprilgrid_6x6/camera_calibration_intrinsic_aprilgrid_6x6.world"/>
+    <arg name="world" value="$(arg world)"/>
     <arg name="paused" value="$(arg paused)"/>
     <arg name="gui" value="$(arg gui)"/>
     <arg name="keyboard_gui" value="$(arg keyboard_teleop)"/>
     <arg name="model_name" value="$(arg model_name)"/>
+    <arg name="simulation_service_ref_json" value="$(arg simulation_service_ref_json)"/>
+    <arg name="target_id" value="$(arg target_id)"/>
     <arg name="static" value="$(arg camera_static)"/>
     <arg name="camera_link_frame" value="$(arg camera_link_frame)"/>
     <arg name="optical_frame" value="$(arg optical_frame)"/>
@@ -49,7 +57,10 @@
     <arg name="fps" value="$(arg fps)"/>
     <arg name="media_source_id" value="$(arg media_source_id)"/>
     <arg name="media_rtp_port" value="$(arg media_rtp_port)"/>
-    <arg name="media_control_socket" value="$(arg media_control_socket)"/>
+    <arg name="media_control_endpoint" value="$(arg media_control_endpoint)"/>
+    <arg name="media_control_target_id" value="$(arg media_control_target_id)"/>
+    <arg name="python_executable" value="$(arg python_executable)"/>
+    <arg name="media_control_instance_id" value="$(arg media_control_instance_id)"/>
     <arg name="publish_encoded_video" value="$(arg publish_encoded_video)"/>
     <arg name="encoded_video_topic" value="$(arg encoded_video_topic)"/>
     <arg name="frame_timing_topic" value="$(arg frame_timing_topic)"/>
@@ -69,7 +80,7 @@
        no separate target spawn is needed. -->
 
   <node if="$(arg keyboard_teleop)" pkg="gazebo_sim_camera"
-        type="keyboard_camera_teleop.py" name="gazebo_camera_keyboard_teleop"
+        type="keyboard_camera_teleop.py" launch-prefix="$(arg python_executable)" name="gazebo_camera_keyboard_teleop"
         output="screen" required="false"
-        args="--model-name $(arg model_name) --linear-step $(arg keyboard_linear_step) --angular-step $(arg keyboard_angular_step)"/>
+        args="--simulation-service-ref-json '$(arg simulation_service_ref_json)' --target-id $(arg target_id) --model-name $(arg model_name) --linear-step $(arg keyboard_linear_step) --angular-step $(arg keyboard_angular_step)"/>
 </launch>

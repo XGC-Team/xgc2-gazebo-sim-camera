@@ -100,22 +100,24 @@ is the stronger choice when loss cannot be tolerated.
 - `encoded_video_topic`, `frame_timing_topic`, and `stream_info_topic`;
 - `encoded_publisher_queue_capacity` (default `8`).
 
-Set unique topics, source ID, frames, RTP port, and control socket for every
+Set unique topics, source ID, frames, and RTP port for every
 additional camera.
 
 ## Still images
 
-The private source-control `snapshot` transaction remains the authoritative
+The fenced XRPC source `capture` transaction remains the authoritative
 full-resolution still-image path. It renders on demand and returns JPEG, an
 optional RGB payload, source timestamp, intrinsics, and the exact optical-frame
 world pose captured by that render transaction. `poseFrameId` is independently
 configured and defaults to `world`; it does not borrow the ROS camera parent
 frame because the value comes from Gazebo `WorldPose()`. It works even when no
-live video consumer is active. Both `describe` and every successful snapshot
+live video consumer is active. Both source status and every successful capture
 declare `timestampClockDomain: "simulation"`; `timestampNanoseconds` is
 therefore directly comparable with the encoded-frame source timestamp and ROS
 simulation observations, not with Unix wall time.
 
 There is no periodic ROS JPEG polling path. Automated capture workflows invoke
-explicit `snapshot` transactions at their event or sampling boundary, while
+explicit `capture` transactions at their event or sampling boundary, while
 continuous consumers use the encoded H264 stream.
+
+Source management and same-frame MIME capture are defined in [source_control.md](source_control.md). All camera sensors in one world share one XRPC endpoint.

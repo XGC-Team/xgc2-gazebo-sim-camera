@@ -46,6 +46,16 @@ test -f "${PLUGIN_SOURCE}" || {
 mkdir -p "${PKG_ROOT}$(dirname "${PLUGIN}")"
 cp -a "${PLUGIN_SOURCE}" "${PKG_ROOT}${PLUGIN}"
 
+# Resolve native runtime ABI requirements from this exact installed artifact.
+# The build toolchain must install the SDK and JsonCpp as owned Debian packages;
+# a private Noble .so must not be advertised as a Focal-compatible dependency.
+mkdir -p "${PKG_ROOT}/debian"
+printf 'Source: xgc2-gazebo-sim-camera\nSection: misc\nPriority: optional\nMaintainer: XGC2 <dev@xiaokang.ink>\n\nPackage: %s\nArchitecture: any\nDescription: XGC2 camera source\n' "${PACKAGE}" >"${PKG_ROOT}/debian/control"
+NATIVE_DEPENDS="$(cd "${PKG_ROOT}" && dpkg-shlibdeps -O -e"${PKG_ROOT}${PLUGIN}")"
+NATIVE_DEPENDS="${NATIVE_DEPENDS#shlibs:Depends=}"
+[[ -n "${NATIVE_DEPENDS}" ]] || { echo 'missing native dependency evidence' >&2; exit 1; }
+rm -r "${PKG_ROOT}/debian"
+
 cat >"${PKG_ROOT}/DEBIAN/control" <<EOF
 Package: ${PACKAGE}
 Version: ${VERSION}
@@ -53,8 +63,8 @@ Section: misc
 Priority: optional
 Architecture: ${ARCH}
 Maintainer: XGC2 <dev@xiaokang.ink>
-Depends: libgl1, libglew2.1, libjpeg8, python3-numpy, python3-opencv, python3-yaml, ros-noetic-camera-calibration, ros-noetic-foxglove-msgs, ros-noetic-gazebo-msgs, ros-noetic-gazebo-plugins, ros-noetic-gazebo-ros, ros-noetic-roscpp, ros-noetic-rospy, ros-noetic-roslaunch, ros-noetic-rostopic, ros-noetic-rviz, ros-noetic-sensor-msgs, ros-noetic-tf, ros-noetic-xacro, ros-noetic-xgc2-camera-msgs (>= 1.2.0-8), ros-noetic-xgc2-camera-calibration (>= 0.3.0-40), ros-noetic-xgc2-gazebo-sim-worlds (>= 1.1.0-14)
-Recommends: ros-noetic-xgc2-gazebo-sim-vrpn-bridge (>= 1.1.0-13)
+Depends: libgl1, libglew2.1, libjpeg8, python3-numpy, python3-opencv, python3-yaml, ros-noetic-foxglove-msgs, ros-noetic-gazebo-plugins, ros-noetic-gazebo-ros, ros-noetic-roscpp, ros-noetic-rospy, ros-noetic-roslaunch, ros-noetic-rostopic, ros-noetic-rviz, ros-noetic-sensor-msgs, ros-noetic-geometry-msgs, ros-noetic-tf2-msgs, ros-noetic-tf, ros-noetic-xacro, ros-noetic-xgc2-camera-msgs (>= 1.2.0-8), ros-noetic-xgc2-camera-calibration (>= 0.3.0-40), ros-noetic-xgc2-gazebo-sim-worlds (>= 1.4.1-4), libxgc2-xrpc1 (>= 0.1.0), ${NATIVE_DEPENDS}
+Recommends: ros-noetic-xgc2-gazebo-sim-vrpn-bridge (>= 1.1.0-27)
 Description: XGC2 independent Gazebo Classic fixed-site RGB camera
 EOF
 

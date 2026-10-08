@@ -8,6 +8,9 @@ still-image capture uses the plugin's source-control snapshot transaction.
 """
 
 import math
+import sys
+if sys.version_info < (3, 10):
+    raise RuntimeError("the selected camera interpreter must provide Python >= 3.10 and the formal XRPC wheel")
 import re
 import threading
 import time
@@ -15,10 +18,10 @@ from pathlib import Path
 
 import rospy
 from geometry_msgs.msg import TransformStamped
-from sensor_msgs.msg import CameraInfo
 from tf.transformations import quaternion_from_euler
 from tf2_msgs.msg import TFMessage
 import yaml
+from xgc2_xrpc import Client, Runtime, ServiceRef, TransportError
 
 
 _CAMERA_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,63}$")
@@ -101,7 +104,10 @@ def _selected_intrinsics(path_value, configured_size, camera_name):
     )
     _matrix_data(document, "rectification_matrix", 3, expected_cols=3)
     _matrix_data(document, "projection_matrix", 3, expected_cols=4)
-    return camera_matrix, distortion
+    model = document.get("distortion_model", "plumb_bob")
+    if model not in {"plumb_bob": 5, "rational_polynomial": 8, "equidistant": 4} or len(distortion) != {"plumb_bob": 5, "rational_polynomial": 8, "equidistant": 4}[model]:
+        raise ValueError("intrinsic distortion model and coefficient count differ")
+    return camera_matrix, distortion, model
 
 
 def _configured_intrinsics():
@@ -154,14 +160,15 @@ def _configured_intrinsics():
     intrinsic_file = str(rospy.get_param("~intrinsic_file", "")).strip()
     camera_name = _stable_camera_name(rospy.get_param("~camera_name", "usb_cam"))
     if intrinsic_file:
-        camera_matrix, distortion = _selected_intrinsics(
+        camera_matrix, distortion, model = _selected_intrinsics(
             intrinsic_file,
             (width, height),
             camera_name,
         )
     else:
         distortion = [0.0] * 5
-    return width, height, camera_matrix, distortion
+        model = "plumb_bob"
+    return width, height, camera_matrix, distortion, model
 
 
 def _transform(parent, child, translation, rotation, stamp):
@@ -187,13 +194,8 @@ class CameraContractPublisher:
             self._height,
             self._camera_matrix,
             self._distortion,
+            self._distortion_model,
         ) = _configured_intrinsics()
-        self._camera_info_publisher = rospy.Publisher(
-            rospy.get_param("~output_camera_info_topic"),
-            CameraInfo,
-            queue_size=1,
-            latch=True,
-        )
         self._transform_publisher = rospy.Publisher(
             rospy.get_param("~output_transform_topic"),
             TFMessage,
@@ -242,7 +244,7 @@ class CameraContractPublisher:
         self._transform_period = 1.0 / transform_rate
         # CameraInfo comes from the selected calibration file when supplied;
         # it is never inferred from image transport metadata.
-        self._publish_camera_info(rospy.Time.now())
+        self._apply_camera_info_metadata()
         self._publish_transforms()
         if self._application is not None:
             self._application.initial_published()
@@ -296,35 +298,49 @@ class CameraContractPublisher:
                 next_refresh = time.monotonic() + 1.0
             self._publish_transforms()
 
-    def _publish_camera_info(self, stamp):
-        output = CameraInfo()
-        output.header.stamp = stamp
-        output.header.frame_id = self._optical_frame
-        output.height = self._height
-        output.width = self._width
-        output.distortion_model = "plumb_bob"
-        output.D = list(self._distortion)
-        output.K = list(self._camera_matrix)
-        output.R = [
-            1.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-            0.0, 0.0, 1.0,
-        ]
-        output.P = [
-            self._camera_matrix[0],
-            0.0,
-            self._camera_matrix[2],
-            0.0,
-            0.0,
-            self._camera_matrix[4],
-            self._camera_matrix[5],
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-        ]
-        self._camera_info_publisher.publish(output)
+    def _apply_camera_info_metadata(self):
+        endpoint = rospy.get_param("~media_control_endpoint")
+        source_id = _stable_camera_name(rospy.get_param("~media_source_id"))
+        target_id = rospy.get_param("~media_control_target_id")
+        route = "/v1/media/sources/" + source_id
+        runtime = Runtime(blocking_workers=1, max_calls=4, max_connections=4)
+        discovery = Client(endpoint, runtime=runtime)
+        client = None
+        try:
+            # This explicitly bounded startup wait only discovers the authored
+            # provider. The actual CAS mutation is submitted exactly once.
+            deadline = time.monotonic() + 30.0
+            while True:
+                try:
+                    description = discovery.json("/v1/describe", method="GET", timeout=1)
+                    if source_id in description.get("sources", []):
+                        break
+                except (TransportError, OSError):
+                    pass
+                if time.monotonic() >= deadline or rospy.is_shutdown():
+                    raise RuntimeError("native camera source did not register before startup deadline")
+                time.sleep(0.05)
+            reference = description["service_ref"]
+            if reference["service"] != "camera-source" or reference["api_version"] != "v1" or reference["endpoint"]["address"] != endpoint:
+                raise RuntimeError("camera source ServiceRef does not match authored binding")
+            client = Client.from_service(ServiceRef.from_dict(reference), runtime=runtime, local_target=target_id)
+            descriptor = client.json(route + "/describe", method="GET")
+            status = client.json(route + "/config", method="GET")
+            if "calibration-metadata" not in descriptor.get("capabilities", []):
+                raise RuntimeError("native camera source cannot publish calibration metadata")
+            result = client.json(route + "/config", {
+                "expected_revision": status["desired_revision"], "persist": False,
+                "config": {"calibration": {"scope": "calibration-metadata",
+                    "model": self._distortion_model, "width": self._width,
+                    "height": self._height, "camera_matrix": list(self._camera_matrix),
+                    "distortion": list(self._distortion)}}}, method="PATCH", timeout=8)
+            if result["receipt"]["stage"] != "completed" or result["published_calibration_revision"] != result["applied_revision"]:
+                raise RuntimeError("native CameraInfo publication was not acknowledged")
+        finally:
+            if client is not None:
+                client.close()
+            discovery.close()
+            runtime.close()
 
     def _publish_transforms(self, _event=None):
         stamp = rospy.Time.now()

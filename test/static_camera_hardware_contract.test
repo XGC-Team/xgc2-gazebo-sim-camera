@@ -1,14 +1,25 @@
 <?xml version="1.0"?>
 <launch>
+  <arg name="world"/>
+  <arg name="simulation_service_ref_json"/>
+  <arg name="target_id"/>
+  <arg name="media_control_endpoint"/>
+  <arg name="media_control_target_id"/>
+  <arg name="python_executable"/>
   <include file="$(find gazebo_sim_camera)/launch/static_camera.launch">
     <arg name="gui" value="false"/>
+    <arg name="world" value="$(arg world)"/>
+    <arg name="simulation_service_ref_json" value="$(arg simulation_service_ref_json)"/>
+    <arg name="target_id" value="$(arg target_id)"/>
+    <arg name="media_control_endpoint" value="$(arg media_control_endpoint)"/>
+    <arg name="media_control_target_id" value="$(arg media_control_target_id)"/>
+    <arg name="python_executable" value="$(arg python_executable)"/>
     <arg name="model_name" value="gazebo_static_camera_hardware_contract"/>
     <arg name="camera_link_frame" value="hardware_camera_link"/>
     <arg name="optical_frame" value="hardware_camera_optical_frame"/>
     <arg name="camera_profile" value="world_wide_4k30_110"/>
     <arg name="media_source_id" value="hardware_camera"/>
     <arg name="media_rtp_port" value="15014"/>
-    <arg name="media_control_socket" value="/tmp/xgc2/media/hardware_camera.sock"/>
     <arg name="snapshot_jpeg_backend" value="hardware"/>
     <arg name="encoded_video_topic" value="/xgc/test/hardware_camera/video_h264"/>
     <arg name="frame_timing_topic" value="/xgc/test/hardware_camera/frame_timing"/>
@@ -19,7 +30,7 @@
   </include>
   <test test-name="static_camera_hardware_contract" pkg="gazebo_sim_camera"
         type="camera_contract_test.py" time-limit="180">
-    <param name="control_socket" value="/tmp/xgc2/media/hardware_camera.sock"/>
+    <param name="control_socket" value="$(arg media_control_endpoint)"/>
     <param name="source_id" value="hardware_camera"/>
     <param name="rtp_host" value="127.0.0.1"/>
     <param name="rtp_port" value="15014"/>
