@@ -9,8 +9,8 @@ still-image capture uses the plugin's source-control snapshot transaction.
 
 import math
 import sys
-if sys.version_info < (3, 10):
-    raise RuntimeError("the selected camera interpreter must provide Python >= 3.10 and the formal XRPC wheel")
+if sys.version_info < (3, 8):
+    raise RuntimeError("the selected camera interpreter must provide Python >= 3.8 and the formal XRPC wheel")
 import re
 import threading
 import time

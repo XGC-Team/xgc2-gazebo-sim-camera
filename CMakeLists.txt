@@ -12,7 +12,8 @@ find_package(GLEW REQUIRED)
 find_package(JPEG REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(XgcXrpc CONFIG REQUIRED)
-find_package(jsoncpp 1.9.4 CONFIG REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(XGC_JSONCPP REQUIRED IMPORTED_TARGET jsoncpp>=1.7)
 
 # One NVENC API contract for all supported drivers (Linux >= 570).
 # Focal's distribution headers expose the removed SDK 9 presets.
@@ -36,7 +37,7 @@ catkin_package(
 add_library(xgc_camera_source_control STATIC src/camera_source_control.cpp)
 set_target_properties(xgc_camera_source_control PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_features(xgc_camera_source_control PRIVATE cxx_std_20)
-target_link_libraries(xgc_camera_source_control PRIVATE XgcXrpc::http JsonCpp::JsonCpp)
+target_link_libraries(xgc_camera_source_control PRIVATE XgcXrpc::http PkgConfig::XGC_JSONCPP)
 
 add_library(xgc_gazebo_media_camera SHARED
   src/snapshot_jpeg_backend.cpp
@@ -57,7 +58,7 @@ target_link_libraries(xgc_gazebo_media_camera
   JPEG::JPEG
   OpenGL::GL
   xgc_camera_source_control
-  JsonCpp::JsonCpp
+  PkgConfig::XGC_JSONCPP
   dl
 )
 
@@ -179,7 +180,7 @@ if(CATKIN_ENABLE_TESTING)
   add_executable(camera_source_control_test test/camera_source_control_test.cpp src/camera_source_control.cpp)
   target_compile_features(camera_source_control_test PRIVATE cxx_std_20)
   target_include_directories(camera_source_control_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-  target_link_libraries(camera_source_control_test XgcXrpc::http JsonCpp::JsonCpp)
+  target_link_libraries(camera_source_control_test XgcXrpc::http PkgConfig::XGC_JSONCPP)
   add_test(NAME camera_source_control COMMAND camera_source_control_test)
   catkin_add_nosetests(test/test_intrinsic_sweep.py)
   catkin_add_nosetests(test/test_keyboard_camera_teleop.py)
