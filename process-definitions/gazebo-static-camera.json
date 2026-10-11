@@ -27,6 +27,31 @@
             "type": "string",
             "default": "gazebo_static_camera"
           },
+          "x": {
+            "type": "number",
+            "default": -4.0,
+            "description": "Authored camera position in the world frame (metres), the same value the placement command receives; the truth transform publishes it."
+          },
+          "y": {
+            "type": "number",
+            "default": 0.0
+          },
+          "z": {
+            "type": "number",
+            "default": 1.5
+          },
+          "roll": {
+            "type": "number",
+            "default": 0.0
+          },
+          "pitch": {
+            "type": "number",
+            "default": 0.0
+          },
+          "yaw": {
+            "type": "number",
+            "default": 0.0
+          },
           "cameraLinkFrame": {
             "type": "string",
             "default": "xgc_world_camera_link"
@@ -181,6 +206,12 @@
           "python_executable:=${pythonExecutable}",
           "use_sim_time:=true",
           "model_name:=${modelName}",
+"x:=${x}",
+"y:=${y}",
+"z:=${z}",
+"roll:=${roll}",
+"pitch:=${pitch}",
+"yaw:=${yaw}",
           "camera_link_frame:=${cameraLinkFrame}",
           "optical_frame:=${opticalFrame}",
           "parent_frame:=${parentFrame}",

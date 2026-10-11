@@ -158,10 +158,9 @@ contract publisher and TF nodes only. Readiness remains `none`; no service or
 calibration/frame/TF configuration and can start before the camera source
 exists. Existing source `CameraPeer` discovery and revision reconciliation keep
 metadata application off the TF publication path. The direct launch retains
-pose inputs for its TF nodes; the managed definition removes raw pose inputs.
-A nondefault authored placement therefore needs a matching direct runtime pose
-or file/resolved TF initialization; the managed runtime cannot infer the CLI
-pose. Camera name, intrinsic file, parent frame, mode and truth TF policy are
+pose inputs for its TF nodes, and the managed definition carries the same six pose parameters (`x`, `y`, `z`,
+`roll`, `pitch`, `yaw`): Core passes the authored pose to the placement command and to the definition, which
+is how the truth transform matches the placed model. Camera name, intrinsic file, parent frame, mode and truth TF policy are
 runtime-only values.
 
 The plugin binds its allocated camera path with XRPC `ReclaimUnreachable`: an

@@ -41,15 +41,19 @@ for entry in definition["definitions"]:
     assert properties["mediaControlEndpoint"]["fixedOnly"] is True
     assert {"mediaControlEndpoint", "mediaControlTargetId", "pythonExecutable"} <= set(required)
     for removed in ("world", "simulationEndpoint", "targetId", "startGazebo", "gazeboMasterPort",
-                    "cameraStatic", "mediaRtpPort", "mediaRtpHost", "snapshotJpegBackend", "gui",
-                    "x", "y", "z", "roll", "pitch", "yaw"):
+                    "cameraStatic", "mediaRtpPort", "mediaRtpHost", "snapshotJpegBackend", "gui"):
         assert removed not in properties
+    # The truth transform publishes the authored pose: Core binds the same six values to the
+    # placement command and to this runtime definition.
+    for pose in ("x", "y", "z", "roll", "pitch", "yaw"):
+        assert properties[pose]["type"] == "number"
     command = entry["command"]["args"]
     separator = command.index("--")
     assert command[separator + 1].endswith("/roslaunch"), command[separator + 1]
     assert command[separator + 2] == "--wait", command[separator + 2]
     assert not any(arg.startswith(("world:=", "simulation_endpoint:=", "media_rtp_port:=")) for arg in command)
-    assert not any(arg.split(":=", 1)[0] in {"x", "y", "z", "roll", "pitch", "yaw"} for arg in command)
+    for pose in ("x", "y", "z", "roll", "pitch", "yaw"):
+        assert pose + ":=${" + pose + "}" in command
 
 launch_root = ET.fromstring(launch)
 arguments = {arg.get("name"): arg for arg in launch_root.findall("arg")}

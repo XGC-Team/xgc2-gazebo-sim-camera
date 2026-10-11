@@ -216,14 +216,10 @@ uses `camera_name`, `intrinsic_file`, `parent_frame`, `mode`, `publish_truth_tf`
 `gt_camera_link_frame`, `gt_optical_frame`, `calibration_root`,
 `resolved_extrinsic_json`, `frame_roles_json`, `publish_xgc_contract`,
 `xgc_transform_topic`, `use_sim_time` and `python_executable`. These are not
-placement options. Pose stays available in the direct runtime launch because it also feeds TF;
-it does not create or move a model. The managed definition removes raw pose
-parameters as well as world/plugin/RTP settings. Its existing extrinsic wrapper
-now initializes runtime TF only; placement receives its pose explicitly. For a
-nondefault authored placement, direct launch callers must supply the same pose.
-The managed runtime has no path to infer that authored pose from the CLI; its
-TF uses the launch defaults unless file/resolved extrinsic initialization is
-selected.
+placement options. The six pose values are inputs of BOTH sides: the placement command puts the
+model there, and the runtime definition (parameters `x`, `y`, `z`, `roll`, `pitch`, `yaw`) feeds the
+truth transform. Core binds the same authored values to the command and to the definition; the
+runtime never creates or moves a model.
 
 The publisher starts before the source exists. Its existing off-thread
 `CameraPeer` watches the source directory, applies CameraInfo metadata once
