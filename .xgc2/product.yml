@@ -69,9 +69,9 @@ usage:
 
     native camera entity lifecycle, and ROS package. Python XRPC consumers require an explicitly
 
-    selected interpreter >=3.10 with the released XRPC wheel and ROS modules
+    selected interpreter >=3.8 (stock Focal Python 3.8 qualifies) with the released XRPC
 
-    installed in that interpreter. Stock Focal Python 3.8 is insufficient.
+    wheel and ROS modules installed in that interpreter.
 
     '
 ownership:

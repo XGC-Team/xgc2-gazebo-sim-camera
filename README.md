@@ -265,17 +265,24 @@ requests both a same-frame JPEG+RGB capture and a fresh JPEG-only transaction;
 it validates dimensions, increasing source timestamps, backend/readback
 diagnostics, JPEG/RGB payloads, pinhole intrinsics, render pose, pose-frame
 identity, and TF without requiring NVENC video encoding in the test.
-The multi-architecture Docker build sources the just-built Catkin overlay and
-runs this snapshot contract through Xvfb with Mesa software rendering. It is
-therefore valid on an arm64 runner without a GPU; hardware NVENC remains a
-target integration check rather than a packaging-CI prerequisite.
+The live contract (`test/static_camera_contract.test`) starts Gazebo on a
+prepared world and needs the world's simulation service, so it is not part of
+the packaging build. The multi-architecture Docker build runs the unit tests,
+the profile tests and the static product contract through Xvfb with Mesa
+software rendering (valid on an arm64 runner without a GPU); the build fetches
+the released Python SDK wheel and verifies its checksum. Hardware NVENC remains
+a target integration check.
 
-After building and sourcing a Catkin workspace, the Gazebo lifecycle regression
-starts and stops the full contract twice and rejects an otherwise easy-to-miss
-`gzserver` exit crash:
+After building and sourcing a Catkin workspace on a station with a prepared
+world, the Gazebo lifecycle regression starts and stops the full contract twice
+and rejects an otherwise easy-to-miss `gzserver` exit crash. The launch
+arguments of the contract have no defaults:
 
 ```bash
-DISPLAY=:1 .xgc2/scripts/check_gazebo_shutdown.sh
+DISPLAY=:1 .xgc2/scripts/check_gazebo_shutdown.sh 2 \
+  world:="$SIMULATION_WORLD_FILE" simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" \
+  target_id:="$SIMULATION_TARGET_ID" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" \
+  media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON"
 ```
 
 The Debian package owns the ROS package share and executable directories plus

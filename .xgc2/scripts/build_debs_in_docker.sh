@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-DOCKER_IMAGE="${DOCKER_IMAGE:-ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.0}"
+DOCKER_IMAGE="${DOCKER_IMAGE:-ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.8@sha256:fce2d76fddf4f6439bf0a188249b731650febdc163befc360bed186b269d252a}"
 WORK_DIR="${WORK_DIR:-${REPO_ROOT}/.work/docker}"
 OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/debs}"
 INSTALL_CHECK="${INSTALL_CHECK:-true}"
@@ -43,10 +43,20 @@ docker run --rm \
     rsync -a --delete /workspace/repo/ /workspace/work/src/gazebo-camera/
     cd /workspace/work
     source /opt/ros/noetic/setup.bash
+    # First-party official Python SDK 0.2.0 (third-party modules stay image-owned):
+    # the released wheel is verified by checksum and placed on the interpreter path.
+    sdk_wheel=/workspace/work/xgc2_xrpc-0.2.0-py3-none-any.whl
+    curl -fsSL --retry 5 \
+      https://github.com/XGC-Team/xgc2-xrpc/releases/download/v0.2.0-1/xgc2_xrpc-0.2.0-py3-none-any.whl \
+      -o "$sdk_wheel"
+    echo "fc81fe2ee5ef1abf2e7313ff4ae9401ce60f3dee14292b5228ea46e01f97c298  $sdk_wheel" | sha256sum -c -
+    rm -rf /workspace/work/sdk
+    python3 -m zipfile -e "$sdk_wheel" /workspace/work/sdk
+    printf "%s\n" "{\"url\":\"https://github.com/XGC-Team/xgc2-xrpc/releases/download/v0.2.0-1/xgc2_xrpc-0.2.0-py3-none-any.whl\",\"archive_info\":{\"hashes\":{\"sha256\":\"fc81fe2ee5ef1abf2e7313ff4ae9401ce60f3dee14292b5228ea46e01f97c298\"}}}" \
+      > /workspace/work/sdk/xgc2_xrpc-0.2.0.dist-info/direct_url.json
+    export PYTHONPATH="/workspace/work/sdk:${PYTHONPATH:-}"
     catkin_make
-    # The contract spawns Gazebo from the just-built source workspace. Without
-    # this overlay, Gazebo cannot resolve libxgc_gazebo_media_camera.so and the
-    # model still inserts successfully while its control socket never appears.
+    # The Python tests import the just-built scripts through the source overlay.
     source /workspace/work/devel/setup.bash
     LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x720x24" \
       catkin_make run_tests_gazebo_sim_camera

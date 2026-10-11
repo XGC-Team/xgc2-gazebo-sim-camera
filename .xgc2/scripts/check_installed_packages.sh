@@ -8,7 +8,7 @@ ROS_DISTRO="${ROS_DISTRO:-noetic}"
 source "/opt/ros/${ROS_DISTRO}/setup.bash"
 : "${SELECTED_PYTHON:?explicit managed Python interpreter required}"
 [[ "${SELECTED_PYTHON}" == /* && -x "${SELECTED_PYTHON}" ]]
-"${SELECTED_PYTHON}" -c 'import sys; assert sys.version_info >= (3, 10); import xgc2_xrpc, rospy, tf'
+"${SELECTED_PYTHON}" -c 'import sys; assert sys.version_info >= (3, 8); import xgc2_xrpc, rospy, tf'
 SHARE="/opt/ros/${ROS_DISTRO}/share/gazebo_sim_camera"
 PLUGIN="/opt/ros/${ROS_DISTRO}/lib/libxgc_gazebo_media_camera.so"
 

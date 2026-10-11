@@ -7,8 +7,8 @@ import math
 import re
 import subprocess
 import sys
-if sys.version_info < (3, 10):
-    raise RuntimeError("the selected camera interpreter must provide Python >= 3.10 and the formal XRPC wheel")
+if sys.version_info < (3, 8):
+    raise RuntimeError("the selected camera interpreter must provide Python >= 3.8 and the formal XRPC wheel")
 
 import numpy as np
 import rospy

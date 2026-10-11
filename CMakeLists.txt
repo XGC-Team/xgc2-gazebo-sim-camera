@@ -136,7 +136,6 @@ install(DIRECTORY
 )
 
 if(CATKIN_ENABLE_TESTING)
-  find_package(rostest REQUIRED)
   catkin_add_nosetests(test/test_camera_intrinsic_selection.py)
   add_library(test_snapshot_jpeg_hardware_plugin SHARED
     test/fake_snapshot_jpeg_hardware.cpp
@@ -186,5 +185,8 @@ if(CATKIN_ENABLE_TESTING)
   catkin_add_nosetests(test/test_intrinsic_sweep.py)
   catkin_add_nosetests(test/test_keyboard_camera_teleop.py)
   catkin_add_nosetests(test/test_world_camera_profiles.py)
-  add_rostest(test/static_camera_contract.test)
+  # test/static_camera_contract.test is the live Gazebo contract. It needs a
+  # prepared world, the world's simulation service reference and a media
+  # control endpoint (launch arguments without defaults), so it is run by
+  # .xgc2/scripts/check_gazebo_shutdown.sh on a station, not registered here.
 endif()

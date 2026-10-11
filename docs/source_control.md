@@ -133,7 +133,7 @@ belongs to the existing simulation-v1 world host. Camera helpers require the
 complete simulation_service_ref_json and target_id; Client.from_service applies
 both target and instance fencing. The process owner explicitly starts/stops the
 prepared native world. Camera launch also requires media_control_endpoint,
-media_control_target_id and a selected python_executable with Python >=3.10,
+media_control_target_id and a selected python_executable with Python >=3.8,
 the official SDK wheel and matching ROS dependencies. It does not use XRPC to
 launch processes. Source effects remain ephemeral; captures are retained by
 media/archive owners rather than written by this plugin.
