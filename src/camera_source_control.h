@@ -3,6 +3,7 @@
 #include <chrono>
 #include <vector>
 #include <json/json.h>
+#include <xgc2/xrpc/http.hpp>
 #include <array>
 #include <atomic>
 #include <functional>
@@ -10,8 +11,6 @@
 #include <mutex>
 #include <string>
 #include <thread>
-
-namespace xgc2 { namespace xrpc { class HttpServer; class RuntimePolicy; } }
 
 namespace gazebo_sim_camera {
 
@@ -71,7 +70,7 @@ class CameraSourceControlHost {
   std::mutex sources_mutex_;
   std::string path_, instance_id_, target_id_;
   std::unique_ptr<xgc2::xrpc::HttpServer> server_;
-  std::shared_ptr<const xgc2::xrpc::RuntimePolicy> policy_;
+  xgc2::xrpc::HttpLimits limits_;
   std::thread executor_;
   std::atomic<bool> stopping_{false}, capture_reserved_{false};
 };
