@@ -1,0 +1,307 @@
+{
+  "apiVersion": "xgc.execution.process/v1",
+  "definitions": [
+    {
+      "id": "gazebo-static-camera",
+      "version": "1.5.0",
+      "label": "Gazebo fixed-site RGB camera",
+      "description": "Adds the managed 3840x2160 30 fps 110-degree H264 camera to the currently running Gazebo Classic scene. One encoded access unit is fanned out to loopback RTP for paired XGC media-edge browser preview and to an asynchronous ROS encoded-video publisher for scientific recording.",
+      "parameters": {
+        "groups": [
+          {
+            "id": "ros-advanced",
+            "label": "ROS Advanced",
+            "collapsed": true,
+            "parameters": [
+              "rosMasterUri"
+            ]
+          }
+        ],
+        "properties": {
+          "rosMasterUri": {
+            "type": "string",
+            "default": "http://127.0.0.1:11311",
+            "output": true
+          },
+          "gazeboMasterPort": {
+            "type": "integer",
+            "default": 11345,
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "startGazebo": {
+            "type": "boolean",
+            "default": false
+          },
+          "cameraStatic": {
+            "type": "boolean",
+            "default": true
+          },
+          "modelName": {
+            "type": "string",
+            "default": "gazebo_static_camera"
+          },
+          "cameraLinkFrame": {
+            "type": "string",
+            "default": "xgc_world_camera_link"
+          },
+          "opticalFrame": {
+            "type": "string",
+            "default": "xgc_world_camera_optical_frame"
+          },
+          "parentFrame": {
+            "type": "string",
+            "default": "world"
+          },
+          "gtCameraLinkFrame": {
+            "type": "string",
+            "default": "usb_cam_link_gt"
+          },
+          "gtOpticalFrame": {
+            "type": "string",
+            "default": "usb_cam_optical_frame_gt"
+          },
+          "cameraProfile": {
+            "type": "string",
+            "default": "world_wide_4k30_110",
+            "enum": [
+              "world_wide_4k30_110"
+            ]
+          },
+          "cameraName": {
+            "type": "string",
+            "default": "usb_cam"
+          },
+          "intrinsicFile": {
+            "type": "string",
+            "default": "",
+            "x-xgc-path-kind": "file",
+            "x-xgc-file-extensions": [
+              ".yaml"
+            ]
+          },
+          "extrinsicFile": {
+            "type": "string",
+            "default": "",
+            "description": "Explicit extrinsics-UTC.yaml used when poseSource is file. Physical or simulation partitions are allowed when parent_frame is world.",
+            "x-xgc-path-kind": "file",
+            "x-xgc-file-extensions": [
+              ".yaml"
+            ]
+          },
+          "poseSource": {
+            "type": "string",
+            "description": "authored uses x/y/z/rpy. file applies one explicit extrinsics-UTC.yaml as the Gazebo camera-link spawn pose.",
+            "default": "authored",
+            "enum": [
+              "authored",
+              "file",
+              "resolved"
+            ]
+          },
+          "calibrationRoot": {
+            "type": "string",
+            "x-xgc-path-kind": "directory"
+          },
+          "selectedPhysicalOpticalFrame": {
+            "type": "string",
+            "default": "usb_cam_optical_frame"
+          },
+          "snapshotJpegBackend": {
+            "type": "string",
+            "description": "Snapshot JPEG policy: auto may use a preflighted accelerator and fall back; hardware is strict; cpu never probes hardware",
+            "default": "auto",
+            "enum": [
+              "auto",
+              "hardware",
+              "cpu"
+            ]
+          },
+          "mediaSourceId": {
+            "type": "string",
+            "default": "usb_cam"
+          },
+          "mediaRtpPort": {
+            "type": "integer",
+            "default": 5004,
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "mediaControlEndpoint": {
+            "type": "string",
+            "description": "Explicit Unix control socket of the paired media-edge service."
+          },
+          "world": {
+            "type": "string",
+            "description": "Prepared SDF world artifact required by the native camera launch.",
+            "x-xgc-path-kind": "file"
+          },
+          "simulationServiceRefJson": {
+            "type": "json",
+            "description": "Instance-pinned simulation-v1 HTTP ServiceRef of the running world."
+          },
+          "targetId": {
+            "type": "string",
+            "description": "Local target identity granted to the native camera entity."
+          },
+          "mediaControlTargetId": {
+            "type": "string",
+            "description": "Explicit local target identity of the paired media-edge service."
+          },
+          "pythonExecutable": {
+            "type": "string",
+            "description": "Selected interpreter with the released XRPC wheel and ROS modules installed.",
+            "fixedOnly": true,
+            "x-xgc-path-kind": "file"
+          },
+          "x": {
+            "type": "number",
+            "default": -4.0
+          },
+          "y": {
+            "type": "number",
+            "default": 0.0
+          },
+          "z": {
+            "type": "number",
+            "default": 1.5
+          },
+          "roll": {
+            "type": "number",
+            "default": 0.0
+          },
+          "pitch": {
+            "type": "number",
+            "default": 0.0
+          },
+          "yaw": {
+            "type": "number",
+            "default": 0.0
+          },
+          "mode": {
+            "type": "string",
+            "default": "truth",
+            "enum": [
+              "truth",
+              "calibration",
+              "validation"
+            ]
+          },
+          "publishTruthTf": {
+            "type": "boolean",
+            "default": true
+          },
+          "publishXgcContract": {
+            "type": "boolean",
+            "default": true
+          },
+          "gui": {
+            "type": "boolean",
+            "default": false
+          },
+          "resolvedExtrinsicJson": {
+            "type": "string",
+            "description": "One immutable extrinsic resolution produced by the camera workflow.",
+            "default": ""
+          },
+          "frameRolesJson": {
+            "type": "string",
+            "default": "{\"parentFrame\":\"world\",\"opticalFrames\":{\"sim\":\"xgc_world_camera_optical_frame\",\"phy\":\"usb_cam_optical_frame\"}}"
+          }
+        },
+        "required": [
+          "world",
+          "simulationServiceRefJson",
+          "targetId",
+          "mediaControlEndpoint",
+          "mediaControlTargetId",
+          "pythonExecutable"
+        ]
+      },
+      "command": {
+        "executable": "/opt/ros/noetic/lib/xgc_camera_calibration/gazebo_camera_from_extrinsic.py",
+        "args": [
+          "--resolved-extrinsic-json",
+          "${resolvedExtrinsicJson}",
+          "--frame-roles-json",
+          "${frameRolesJson}",
+          "--pose-source",
+          "${poseSource}",
+          "--calibration-root",
+          "${calibrationRoot}",
+          "--camera-name",
+          "${cameraName}",
+          "--parent-frame",
+          "${parentFrame}",
+          "--optical-frame",
+          "${opticalFrame}",
+          "--selected-physical-optical-frame",
+          "${selectedPhysicalOpticalFrame}",
+          "--extrinsic-file",
+          "${extrinsicFile}",
+          "--optical-offset-x",
+          "0.067",
+          "--optical-offset-y",
+          "0",
+          "--optical-offset-z",
+          "0",
+          "--",
+          "/opt/ros/noetic/bin/roslaunch",
+          "gazebo_sim_camera",
+          "static_camera.launch",
+          "world:=${world}",
+          "simulation_service_ref_json:=${simulationServiceRefJson}",
+          "target_id:=${targetId}",
+          "media_control_target_id:=${mediaControlTargetId}",
+          "python_executable:=${pythonExecutable}",
+          "start_gazebo:=${startGazebo}",
+          "static:=${cameraStatic}",
+          "use_sim_time:=true",
+          "model_name:=${modelName}",
+          "camera_link_frame:=${cameraLinkFrame}",
+          "optical_frame:=${opticalFrame}",
+          "parent_frame:=${parentFrame}",
+          "gt_camera_link_frame:=${gtCameraLinkFrame}",
+          "gt_optical_frame:=${gtOpticalFrame}",
+          "camera_profile:=${cameraProfile}",
+          "camera_name:=${cameraName}",
+          "calibration_root:=${calibrationRoot}",
+          "intrinsic_file:=${intrinsicFile}",
+          "snapshot_jpeg_backend:=${snapshotJpegBackend}",
+          "media_source_id:=${mediaSourceId}",
+          "media_rtp_port:=${mediaRtpPort}",
+          "media_control_endpoint:=${mediaControlEndpoint}",
+          "x:=${x}",
+          "y:=${y}",
+          "z:=${z}",
+          "roll:=${roll}",
+          "pitch:=${pitch}",
+          "yaw:=${yaw}",
+          "mode:=${mode}",
+          "publish_truth_tf:=${publishTruthTf}",
+          "publish_xgc_contract:=${publishXgcContract}",
+          "xgc_camera_info_topic:=/xgc/camera/world/camera_info",
+          "xgc_transform_topic:=/xgc/camera/world/tf",
+          "gui:=${gui}"
+        ],
+        "env": {
+          "GAZEBO_MASTER_URI": "http://127.0.0.1:${gazeboMasterPort}",
+          "ROS_MASTER_URI": "${rosMasterUri}"
+        }
+      },
+      "setupFiles": [
+        "/opt/ros/noetic/setup.bash"
+      ],
+      "readiness": {
+        "kind": "none"
+      },
+      "stop": {
+        "graceMs": 5000
+      },
+      "logs": {
+        "maxBytes": 1048576,
+        "files": 3
+      }
+    }
+  ]
+}

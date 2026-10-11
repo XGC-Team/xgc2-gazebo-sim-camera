@@ -65,9 +65,9 @@ usage:
 
     or depend on any FS150, Scout, UAV, or other vehicle camera model.
 
-    XGC2 owns the ProcessDefinition centrally; this package owns the Gazebo source
+    This package owns the installed process definition, Gazebo source plugin,
 
-    plugin and ROS package only. Python XRPC consumers require an explicitly
+    native camera entity lifecycle, and ROS package. Python XRPC consumers require an explicitly
 
     selected interpreter >=3.10 with the released XRPC wheel and ROS modules
 
@@ -79,6 +79,7 @@ ownership:
   - /opt/ros/noetic/share/gazebo_sim_camera
   - /opt/ros/noetic/lib/gazebo_sim_camera
   - /opt/ros/noetic/lib/libxgc_gazebo_media_camera.so
+  - /usr/share/xgc2/process-definitions/gazebo-static-camera.json
 release:
   requires:
   - xgc2-xrpc

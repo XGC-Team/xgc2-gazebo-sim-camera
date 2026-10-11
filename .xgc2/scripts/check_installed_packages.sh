@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+test -f /usr/share/xgc2/process-definitions/gazebo-static-camera.json
+test -x /opt/ros/noetic/lib/xgc_camera_calibration/gazebo_camera_from_extrinsic.py
+
 ROS_DISTRO="${ROS_DISTRO:-noetic}"
 source "/opt/ros/${ROS_DISTRO}/setup.bash"
 : "${SELECTED_PYTHON:?explicit managed Python interpreter required}"

@@ -46,6 +46,9 @@ test -f "${PLUGIN_SOURCE}" || {
 mkdir -p "${PKG_ROOT}$(dirname "${PLUGIN}")"
 cp -a "${PLUGIN_SOURCE}" "${PKG_ROOT}${PLUGIN}"
 
+install -D -m 0644 "${REPO_ROOT}/process-definitions/gazebo-static-camera.json" \
+  "${PKG_ROOT}/usr/share/xgc2/process-definitions/gazebo-static-camera.json"
+
 # Resolve native runtime ABI requirements from this exact installed artifact.
 # The build toolchain must install the SDK and JsonCpp as owned Debian packages;
 # a private Noble .so must not be advertised as a Focal-compatible dependency.
