@@ -218,7 +218,11 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     snapshotPoseFrameID_ =
         SDFValue<std::string>(sdf, "snapshotPoseFrameId", "world");
     rtpHost_ = SDFValue<std::string>(sdf, "rtpHost", "127.0.0.1");
-    rtpPort_ = SDFValue<int>(sdf, "rtpPort", 5004);
+    if (!sdf->HasElement("rtpPort")) {
+      gzerr << "xgc_media_camera requires the allocated RTP port\n";
+      return;
+    }
+    rtpPort_ = sdf->Get<int>("rtpPort");
     controlSocketPath_ = SDFValue<std::string>(sdf, "controlEndpoint", "");
     controlTargetID_ = SDFValue<std::string>(sdf, "controlTargetId", "");
     controlInstanceID_ = SDFValue<std::string>(sdf, "controlInstanceId", "");

@@ -79,7 +79,7 @@ class CameraContractTest(unittest.TestCase):
         source_id = rospy.get_param("~source_id", "contract_camera")
         self.source_id = source_id
         rtp_host = rospy.get_param("~rtp_host", "127.0.0.1")
-        rtp_port = int(rospy.get_param("~rtp_port", 15004))
+        rtp_port = int(rospy.get_param("~rtp_port"))
         frame_id = rospy.get_param("~frame_id", "contract_camera_optical_frame")
         parent_frame = rospy.get_param("~parent_frame", "map")
         width = int(rospy.get_param("~width", 1280))

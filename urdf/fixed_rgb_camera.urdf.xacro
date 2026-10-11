@@ -15,7 +15,6 @@
   <xacro:arg name="media_plugin_filename" default="libxgc_gazebo_media_camera.so"/>
   <xacro:arg name="media_source_id" default="usb_cam"/>
   <xacro:arg name="media_rtp_host" default="127.0.0.1"/>
-  <xacro:arg name="media_rtp_port" default="5004"/>
   <xacro:arg name="media_control_endpoint" default=""/>
   <xacro:arg name="media_control_target_id" default=""/>
   <xacro:arg name="media_control_instance_id" default=""/>

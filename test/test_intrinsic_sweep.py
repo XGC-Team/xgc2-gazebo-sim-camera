@@ -3,6 +3,7 @@
 import importlib.util
 import sys
 import unittest
+from unittest.mock import Mock, patch
 from pathlib import Path
 
 from sensor_msgs.msg import Image
@@ -16,6 +17,19 @@ SPEC.loader.exec_module(MODULE)
 
 
 class IntrinsicSweepTest(unittest.TestCase):
+    def test_started_sweep_aborts_without_replay_after_world_loss(self):
+        args = MODULE.parser().parse_args(["--simulation-endpoint", "/run/" + "a" * 32 + ".sock",
+                                          "--target-id", "fixture"])
+        controller = Mock()
+        controller.set_view.side_effect = ConnectionError("world stopped during sweep")
+        controller.set_pose.side_effect = ConnectionError("world still unavailable during restore")
+        with patch.object(MODULE, "GazeboModelController", return_value=controller), \
+                patch.object(MODULE.rospy, "is_shutdown", return_value=False), \
+                patch.object(MODULE.rospy, "loginfo"), patch.object(MODULE.rospy, "logerr"):
+            self.assertEqual(MODULE.run_calibration(args, Mock()), 2)
+        self.assertEqual(controller.set_view.call_count, 1)
+        self.assertEqual(controller.set_pose.call_count, 1)
+
     def test_progress_matches_ros_camera_calibration_ranges(self):
         samples = [(0.1, 0.1, 0.1, 0.0), (0.8, 0.8, 0.4, 0.5)]
         self.assertEqual(MODULE.calibration_progress(samples), (1.0, 1.0, 1.0, 1.0))

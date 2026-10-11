@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Own a camera entity lifecycle through the world simulation-v1 provider."""
 import argparse
-import json
 import math
 import re
 import sys
@@ -14,26 +13,14 @@ from xgc2_xrpc import Client, Runtime, ServiceRef
 from camera_peer import CameraPeer
 
 
-def bind_simulation_service(service_ref_json, target_id, runtime):
-    reference = ServiceRef.from_dict(json.loads(service_ref_json)).validate()
-    if reference.service != "xgc2.simulation" or reference.api_version != "v1" or reference.profile != "http.v1":
-        raise ValueError("an explicit simulation-v1 HTTP ServiceRef is required")
-    if reference.target_id != target_id:
-        raise ValueError("simulation ServiceRef target does not match the explicit target grant")
-    return Client.from_service(reference, runtime=runtime, local_target=target_id), reference
-
-
 class NativeCameraEntity:
-    def __init__(self, service_ref_json, target_id, model_name, document, position, orientation):
+    def __init__(self, endpoint, target_id, model_name, document, position, orientation):
         if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", model_name):
             raise ValueError("camera model name must be a bounded entity identifier")
         if not isinstance(document, str) or not document or len(document.encode()) > 65536:
             raise ValueError("camera definition must be a nonempty bounded URDF document")
         if not all(math.isfinite(value) for value in position + orientation):
             raise ValueError("camera pose must contain finite values")
-        reference = ServiceRef.from_dict(json.loads(service_ref_json)).validate()
-        if reference.service != "xgc2.simulation" or reference.api_version != "v1" or reference.profile != "http.v1" or reference.target_id != target_id:
-            raise ValueError("an explicit local simulation-v1 HTTP ServiceRef is required")
         self._entity_ref = None
         self._reference = None
         self._operation = None
@@ -41,7 +28,7 @@ class NativeCameraEntity:
         self._entity = {"id": model_name, "role": "sensor", "asset": {"id": model_name + "-definition",
                         "realization": {"media_type": "application/urdf+xml", "content": document}},
                         "pose": {"position": position, "orientation": orientation}}
-        self._peer = CameraPeer(reference.endpoint.address, target_id, "xgc2.simulation", self._create)
+        self._peer = CameraPeer(endpoint, target_id, "xgc2.simulation", self._create)
 
     def _create(self, client, description, stop):
         reference = ServiceRef.from_dict(description.get("service_ref", description.get("facts", {}).get("service_ref")))
@@ -99,7 +86,7 @@ class NativeCameraEntity:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--simulation-service-ref-json", required=True)
+    parser.add_argument("--simulation-endpoint", required=True)
     parser.add_argument("--target-id", required=True)
     parser.add_argument("--model-name", required=True)
     parser.add_argument("--description-param", required=True,
@@ -108,7 +95,7 @@ def main():
         parser.add_argument("--" + axis, type=float, required=True)
     args = parser.parse_args(rospy.myargv(sys.argv)[1:])
     rospy.init_node("native_camera_entity")
-    entity = NativeCameraEntity(args.simulation_service_ref_json, args.target_id, args.model_name,
+    entity = NativeCameraEntity(args.simulation_endpoint, args.target_id, args.model_name,
         rospy.get_param(args.description_param), [args.x, args.y, args.z],
         [float(value) for value in quaternion_from_euler(args.roll, args.pitch, args.yaw)])
     try:

@@ -70,16 +70,18 @@ ROS consumers use the encoded H264 and CameraInfo topics. Full-resolution still
 images are explicit source-control snapshot transactions; there is no periodic
 ROS JPEG polling path.
 
-The default instance uses:
+The camera uses:
 
 - media source ID `usb_cam`;
-- RTP destination `127.0.0.1:5004`;
-- shared XRPC endpoint `/tmp/xgc2/media/camera-source.sock`;
+- RTP host `127.0.0.1` and the port allocated in its inventory row;
+- the opaque camera-source socket path allocated by Core;
 - frames `usb_cam_link -> usb_cam_optical_frame`.
 
 The optical-frame joint uses the REP-103 rotation
 `rpy=(-pi/2, 0, -pi/2)`. A second instance must use a distinct model name,
-source ID, RTP port, camera-link frame, and optical frame. All sensors in one world share the same XRPC endpoint.
+source ID, RTP port, camera-link frame, and optical frame. The current shared host
+requires sensors inside one gzserver to share its binding; distinct camera paths
+in one world are an existing host restriction.
 
 The native `camera-source` service uses the official XRPC 0.2.0 SDK. Unbound
 `GET /v1/describe` returns
@@ -120,20 +122,24 @@ serve source control before the master exists; a replaced master ends the bound
 Gazebo process. Source status includes the master state and identity. Consumers
 may connect late or restart without restarting the source host.
 
-Supply the allocated simulation ServiceRef and target grant. Select a complete parameter
-group with:
+Supply the allocated `simulation_endpoint`, camera-source endpoint, target grants
+and `media_rtp_port`. These are rendezvous inputs: the world and source may be
+absent at launch. Paths are accepted unchanged, including flat hashed names in
+an existing parent directory. The spawner has readiness `none` and publishes no
+service; the plugin inside gzserver serves camera source control. Select a
+complete parameter group with:
 
 ```bash
 roslaunch --wait gazebo_sim_camera static_camera.launch \
   world:=/absolute/prepared-camera.world \
-  simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
-  media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
+  simulation_endpoint:="$SIMULATION_ENDPOINT" target_id:="$SIMULATION_TARGET_ID" \
+  media_rtp_port:="$MEDIA_RTP_PORT" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
   python_executable:="$CAMERA_PYTHON_EXECUTABLE" camera_profile:=world_wide_4k30_110 gui:=false
 
 roslaunch --wait gazebo_sim_camera static_camera.launch \
   world:=/absolute/prepared-camera.world \
-  simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
-  media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
+  simulation_endpoint:="$SIMULATION_ENDPOINT" target_id:="$SIMULATION_TARGET_ID" \
+  media_rtp_port:="$MEDIA_RTP_PORT" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
   python_executable:="$CAMERA_PYTHON_EXECUTABLE" camera_profile:=world_wide_4k30_110 gui:=false
 ```
 
@@ -164,10 +170,10 @@ roslaunch --wait gazebo_sim_camera static_camera.launch \
   camera_profile:=world_wide_4k30_110 \
   model_name:=yard_camera \
   world:=/absolute/prepared-camera.world \
-  simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
+  simulation_endpoint:="$SIMULATION_ENDPOINT" target_id:="$SIMULATION_TARGET_ID" \
   media_source_id:=yard_cam \
-  media_rtp_port:=5010 \
-  media_control_endpoint:=/explicit/owned/runtime/camera-source.sock \
+  media_rtp_port:="$MEDIA_RTP_PORT" \
+  media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" \
   media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$CAMERA_PYTHON_EXECUTABLE" \
   camera_link_frame:=yard_cam_link \
   optical_frame:=yard_cam_optical_frame \
@@ -194,16 +200,16 @@ through the same `static_camera.launch` workflow:
 ```bash
 roslaunch --wait gazebo_sim_camera intrinsic_calibration_world.launch \
   world:=/absolute/prepared-camera.world \
-  simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
-  media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
+  simulation_endpoint:="$SIMULATION_ENDPOINT" target_id:="$SIMULATION_TARGET_ID" \
+  media_rtp_port:="$MEDIA_RTP_PORT" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
   python_executable:="$CAMERA_PYTHON_EXECUTABLE" camera_profile:=world_wide_4k30_110 gui:=false
 
 roslaunch --wait gazebo_sim_camera extrinsic_calibration_world.launch \
   camera_profile:=world_wide_4k30_110 \
   world:=/absolute/prepared-extrinsic.world \
-  simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
+  simulation_endpoint:="$SIMULATION_ENDPOINT" target_id:="$SIMULATION_TARGET_ID" \
   vrpn_config:=/absolute/extrinsic_markers_vrpn.yaml \
-  media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
+  media_rtp_port:="$MEDIA_RTP_PORT" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
   python_executable:="$CAMERA_PYTHON_EXECUTABLE" mode:=calibration publish_truth_tf:=false
 ```
 
@@ -244,10 +250,11 @@ pose.
 
 The XGC2 central process catalog, not this product, owns ProcessDefinition
 `gazebo-static-camera`. It exposes `cameraProfile` as an enum synchronized with
-the checked-in YAML. Model/frame identity, source ID, RTP port, control endpoint,
-pose, and TF mode remain ordinary process parameters. Service readiness is
-reported by unbound `GET /v1/describe` on its private XRPC endpoint; native
-source membership and applied receipts describe each sensor's lifecycle. This
+the checked-in YAML. Model/frame identity, source ID, pose, and TF mode remain
+process parameters. Core supplies the required allocated RTP port and fixed
+world/source socket paths. The spawner has readiness `none` and advertises no
+service. The plugin reports its own readiness through unbound `GET /v1/describe`;
+native source membership and applied receipts describe each sensor's lifecycle. This
 Debian package does not install files under `/usr/share/xgc2/process-definitions`.
 
 ## Test and package
@@ -290,8 +297,8 @@ arguments of the contract have no defaults:
 
 ```bash
 DISPLAY=:1 .xgc2/scripts/check_gazebo_shutdown.sh 2 \
-  world:="$SIMULATION_WORLD_FILE" simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" \
-  target_id:="$SIMULATION_TARGET_ID" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" \
+  world:="$SIMULATION_WORLD_FILE" simulation_endpoint:="$SIMULATION_ENDPOINT" \
+  target_id:="$SIMULATION_TARGET_ID" media_rtp_port:="$MEDIA_RTP_PORT" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" \
   media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON"
 ```
 

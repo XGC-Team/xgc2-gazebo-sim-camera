@@ -129,13 +129,21 @@ capture budget four seconds. Native render callbacks receive typed records;
 JSON and HTTP run on the one SDK IO executor.
 
 Source membership follows actual native sensor lifecycle. Create/remove/reset
-belongs to the existing simulation-v1 world host. Camera helpers require the
-complete simulation_service_ref_json and target_id; Client.from_service applies
-both target and instance fencing. The process owner explicitly starts/stops the
-prepared native world. Camera launch also requires media_control_endpoint,
-media_control_target_id and a selected python_executable with Python >=3.8,
+belongs to the existing simulation-v1 world host. Camera helpers take the opaque
+simulation_endpoint and target_id, watch the endpoint's existing parent directory,
+and discover the current world through one unbound held describe. The discovered
+ServiceRef supplies target and instance fencing. The spawner replays the same
+authored camera entity once per world instance, including after restart, without
+blocking its initialization on the world. Its process readiness is none, with no
+services or publishAs; the plugin inside gzserver is the camera-source authority.
+Camera launch also requires media_control_endpoint, media_control_target_id, the
+inventory's allocated media_rtp_port and a selected python_executable with Python >=3.8,
 the official SDK wheel and matching ROS dependencies. It does not use XRPC to
-launch processes. Source effects remain ephemeral; captures are retained by
+launch processes. The plugin binds its allocated camera path with XRPC
+ReclaimUnreachable: a stale unreachable socket is reclaimed, while a live owner
+makes binding fail. Paths are accepted as given and require only an existing
+parent; the product does not derive service names or parse hashed filenames.
+Source effects remain ephemeral; captures are retained by
 media/archive owners rather than written by this plugin.
 
 The engine compilation unit stays C++17; the SDK facade is C++20. Existing

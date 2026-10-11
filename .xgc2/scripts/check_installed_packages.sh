@@ -37,16 +37,15 @@ EXPANDED_PROFILE="$(mktemp)"
 trap 'rm -f "${EXPANDED_PROFILE}"' EXIT
 /opt/ros/noetic/bin/xacro "${SHARE}/urdf/fixed_rgb_camera.urdf.xacro" \
   camera_profile:=world_wide_4k30_110 media_control_endpoint:=/granted/media.sock \
-  media_control_target_id:=package-contract >"${EXPANDED_PROFILE}"
+  media_control_target_id:=package-contract media_rtp_port:=26417 >"${EXPANDED_PROFILE}"
 grep -q '<width>3840</width>' "${EXPANDED_PROFILE}"
 grep -q '<height>2160</height>' "${EXPANDED_PROFILE}"
 grep -q '<update_rate>30.0</update_rate>' "${EXPANDED_PROFILE}"
 
 # --files only validates installed launch composition; it starts no process and
-# therefore uses an explicit syntax-only ServiceRef, never a readiness probe.
-CONTRACT_REF='{"target_id":"package-contract","service":"xgc2.simulation","api_version":"v1","instance_id":"syntax-only-instance","profile":"http.v1","endpoint":{"kind":"unix","address":"/granted/world.sock"}}'
-CONTRACT_ARGS=(world:=/granted/prepared-world.world simulation_service_ref_json:="${CONTRACT_REF}"
-  target_id:=package-contract media_control_endpoint:=/granted/media.sock
+# therefore uses allocated endpoint strings, never a readiness probe.
+CONTRACT_ARGS=(world:=/granted/prepared-world.world simulation_endpoint:=/granted/world.sock
+  target_id:=package-contract media_control_endpoint:=/granted/media.sock media_rtp_port:=26417
   media_control_target_id:=package-contract python_executable:="${SELECTED_PYTHON}")
 for entry in static_camera intrinsic_calibration_world; do
   roslaunch --files gazebo_sim_camera "${entry}.launch" gui:=false "${CONTRACT_ARGS[@]}" >/dev/null

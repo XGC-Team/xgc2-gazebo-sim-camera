@@ -14,10 +14,9 @@ import cv2
 import numpy as np
 import rospy
 from geometry_msgs.msg import Pose
-from xgc2_xrpc import Client, Fault, Runtime
 from sensor_msgs.msg import Image
 from tf.transformations import quaternion_from_euler
-from native_camera_entity import bind_simulation_service
+from camera_peer import CameraPeer
 
 
 PARAMETER_RANGES = (0.7, 0.7, 0.4, 0.5)
@@ -151,28 +150,12 @@ class GazeboModelController:
     the provider's native operation wait, never from a ROS state sample.
     User images and calibration observations continue using ROS data topics.
     """
-    def __init__(self, model_name, reference_frame="world", connection_timeout=10.0,
-                 service_ref_json=None, target_id=None, runtime=None):
+    def __init__(self, model_name, client, reference_frame="world"):
         if reference_frame != "world":
             raise ValueError("simulation-v1 camera poses use the declared world frame")
         self.model_name = model_name
-        self._owns_runtime = runtime is None
-        self._runtime = runtime or Runtime(blocking_workers=1, max_calls=8, max_connections=8)
-        self._client = None
-        try:
-            self._client, _ = bind_simulation_service(service_ref_json, target_id, self._runtime)
-            self._reference = None
-        except BaseException:
-            if self._client is not None:
-                self._client.close()
-            if self._owns_runtime:
-                self._runtime.close()
-            raise
-
-    def close(self):
-        self._client.close()
-        if self._owns_runtime:
-            self._runtime.close()
+        self._client = client
+        self._reference = None
 
     def _entity(self):
         result = self._client.json("/v1/entities/" + self.model_name, method="GET", timeout=5)
@@ -271,7 +254,7 @@ def parser():
         description="Move a Gazebo camera until ROS camera_calibration progress is covered."
     )
     result.add_argument("--model-name", default="gazebo_static_camera")
-    result.add_argument("--simulation-service-ref-json", required=True)
+    result.add_argument("--simulation-endpoint", required=True)
     result.add_argument("--target-id", required=True)
     result.add_argument("--image-topic", default="/usb_cam/image_raw")
     result.add_argument("--board-size", type=parse_board_size, default=parse_board_size("7x5"))
@@ -286,10 +269,8 @@ def parser():
     return result
 
 
-def main():
-    args = parser().parse_args(rospy.myargv(argv=sys.argv)[1:])
-    rospy.init_node("gazebo_camera_intrinsic_calibration_driver")
-    controller = GazeboModelController(args.model_name, service_ref_json=args.simulation_service_ref_json, target_id=args.target_id)
+def run_calibration(args, client):
+    controller = GazeboModelController(args.model_name, client)
     original_pose = controller.current_pose()
     target = (args.board_x, args.board_y, args.board_z)
     samples = []
@@ -332,18 +313,37 @@ def main():
                     "Intrinsic coverage complete; camera_calibration should now enable CALIBRATE."
                 )
                 break
+    except Exception as error:
+        rospy.logerr("Intrinsic pose sweep failed: %s", error)
     finally:
         if not args.keep_final_pose:
             try:
                 controller.set_pose(original_pose)
                 rospy.loginfo("Restored %s to its original pose", args.model_name)
-            except (rospy.ROSException, RuntimeError, Fault) as error:
+            except Exception as error:
                 rospy.logerr("Could not restore original camera pose: %s", error)
-        controller.close()
     if not complete:
         rospy.logerr("Pose sweep ended before all four progress ranges were covered")
         return 2
     return 0
+
+
+def main():
+    args = parser().parse_args(rospy.myargv(argv=sys.argv)[1:])
+    rospy.init_node("gazebo_camera_intrinsic_calibration_driver")
+    result = [2]
+    def capture(client, description, stop):
+        # This command requests a capture sweep. Discovery and the sweep stay
+        # off the ROS main loop while the allocated world/camera arrive.
+        result[0] = run_calibration(args, client)
+        rospy.signal_shutdown("Intrinsic pose sweep completed")
+    peer = CameraPeer(args.simulation_endpoint, args.target_id, "xgc2.simulation", capture)
+    rospy.on_shutdown(peer.stop.set)
+    try:
+        rospy.spin()
+    finally:
+        peer.close()
+    return result[0]
 
 
 if __name__ == "__main__":

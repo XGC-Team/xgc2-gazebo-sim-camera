@@ -3,12 +3,12 @@ set -euo pipefail
 
 # usage: check_gazebo_shutdown.sh RUNS name:=value...   (RUNS is at least 2)
 # The launch arguments of test/static_camera_contract.test have no defaults:
-# world, simulation_service_ref_json, target_id, media_control_endpoint,
-# media_control_target_id and python_executable. Pass them as roslaunch arguments.
+# world, simulation_endpoint, target_id, media_control_endpoint,
+# media_control_target_id, media_rtp_port and python_executable. Pass them as roslaunch arguments.
 readonly RUNS="${1:-2}"
 if ! [[ "${RUNS}" =~ ^[0-9]+$ ]] || (( RUNS < 2 )); then
-  echo "usage: $0 RUNS world:=<prepared world> simulation_service_ref_json:=<ServiceRef> target_id:=<id>" \
-    "media_control_endpoint:=<socket> media_control_target_id:=<id> python_executable:=<python>" >&2
+  echo "usage: $0 RUNS world:=<prepared world> simulation_endpoint:=<socket> target_id:=<id>" \
+    "media_control_endpoint:=<socket> media_control_target_id:=<id> media_rtp_port:=<port> python_executable:=<python>" >&2
   exit 2
 fi
 shift

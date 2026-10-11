@@ -7,7 +7,6 @@ import math
 import re
 import subprocess
 import sys
-import json
 import random
 import threading
 import time
@@ -94,9 +93,9 @@ def resolve_keyboard_topic(requested, world):
 
 
 class CameraPosePublisher:
-    def __init__(self, model_name, service_ref_json, target_id):
+    def __init__(self, model_name, endpoint, target_id):
         self.model_name, self.target_id = model_name, target_id
-        self.reference = json.loads(service_ref_json)
+        self.endpoint = endpoint
         self._lock = threading.Lock()
         self._pose, self._revision, self._applied = None, 0, 0
         self._peer = None
@@ -108,29 +107,24 @@ class CameraPosePublisher:
         # GUI idle starts no control connection. One bounded slot holds the
         # latest desired pose while the world or camera entity is unavailable.
         if self._peer is None:
-            self._peer = CameraPeer(self.reference["endpoint"]["address"], self.target_id,
+            self._peer = CameraPeer(self.endpoint, self.target_id,
                                     "xgc2.simulation", self._apply)
         else:
             self._peer.wake()
 
     def _apply(self, client, description, stop):
-        reference = description.get("service_ref", description.get("facts", {}).get("service_ref"))
-        controller = GazeboModelController(self.model_name, service_ref_json=json.dumps(reference),
-                                          target_id=self.target_id, runtime=client.runtime)
-        try:
-            while not stop.is_set():
-                with self._lock:
-                    pose, revision = copy.deepcopy(self._pose), self._revision
-                # Reading the actual pose reconciles a lost write reply first.
-                current = controller.current_pose()
-                if current != pose:
-                    controller.set_pose(pose)
-                with self._lock:
-                    self._applied = revision
-                    if revision == self._revision:
-                        return
-        finally:
-            controller.close()
+        controller = GazeboModelController(self.model_name, client)
+        while not stop.is_set():
+            with self._lock:
+                pose, revision = copy.deepcopy(self._pose), self._revision
+            # Reading the actual pose reconciles a lost write reply first.
+            current = controller.current_pose()
+            if current != pose:
+                controller.set_pose(pose)
+            with self._lock:
+                self._applied = revision
+                if revision == self._revision:
+                    return
 
     def close(self):
         if self._peer is not None:
@@ -188,7 +182,7 @@ def apply_key(key, pose, initial_pose, linear_step, angular_step):
 def parser():
     result = argparse.ArgumentParser(description="Control a Gazebo camera from GUI keypresses.")
     result.add_argument("--model-name", default="gazebo_static_camera")
-    result.add_argument("--simulation-service-ref-json", required=True)
+    result.add_argument("--simulation-endpoint", required=True)
     result.add_argument("--target-id", required=True)
     result.add_argument("--linear-step", type=float, default=0.15)
     result.add_argument("--angular-step", type=float, default=0.05)
@@ -202,7 +196,7 @@ def parser():
 def main():
     args = parser().parse_args(rospy.myargv(argv=sys.argv)[1:])
     rospy.init_node("gazebo_camera_keyboard_teleop")
-    controller = CameraPosePublisher(args.model_name, args.simulation_service_ref_json, args.target_id)
+    controller = CameraPosePublisher(args.model_name, args.simulation_endpoint, args.target_id)
     initial = rospy.get_param("~initial_pose")
     pose = Pose()
     pose.position.x, pose.position.y, pose.position.z = initial["position"]

@@ -52,12 +52,12 @@ for xml in launch/*.launch test/*.test; do xmllint --noout "${xml}"; done
 # Direct expansion exercises every declared default.  This specifically guards
 # against root-element substitutions that are evaluated before <xacro:arg>.
 /opt/ros/noetic/bin/xacro urdf/fixed_rgb_camera.urdf.xacro \
-  media_control_endpoint:=/granted/media.sock media_control_target_id:=package-contract >/dev/null
+  media_control_endpoint:=/granted/media.sock media_control_target_id:=package-contract media_rtp_port:=26417 >/dev/null
 
 # Verify both a named profile and the advanced per-field compatibility
 # overrides accepted by direct roslaunch users.
 /opt/ros/noetic/bin/xacro urdf/fixed_rgb_camera.urdf.xacro camera_profile:=world_wide_4k30_110 \
-  media_control_endpoint:=/granted/media.sock media_control_target_id:=package-contract >/dev/null
+  media_control_endpoint:=/granted/media.sock media_control_target_id:=package-contract media_rtp_port:=26417 >/dev/null
 /opt/ros/noetic/bin/xacro urdf/fixed_rgb_camera.urdf.xacro model_name:=test_camera camera_link_frame:=usb_cam_link optical_frame:=usb_cam_optical_frame width:=320 height:=240 fps:=10 hfov_degrees:=110 near_clip:=0.05 far_clip:=20 noise_stddev:=0 \
-  media_control_endpoint:=/granted/media.sock media_control_target_id:=package-contract >/dev/null
+  media_control_endpoint:=/granted/media.sock media_control_target_id:=package-contract media_rtp_port:=26417 >/dev/null
 echo "Package compliance checks passed"

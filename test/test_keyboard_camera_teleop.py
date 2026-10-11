@@ -93,7 +93,7 @@ def stream_worker(directory):
     MODULE.rospy.on_shutdown = callbacks.append
     MODULE.rospy.get_param = lambda name: {"position": [0, 0, 0], "rotation": [0, 0, 0]}
     MODULE.rospy.myargv = lambda **kwargs: ["keyboard", "--world", str(root / "world.sdf"),
-        "--simulation-service-ref-json", "{}", "--target-id", "fixture"]
+        "--simulation-endpoint", str(root / "world.sock"), "--target-id", "fixture"]
     MODULE.rospy.logwarn = lambda fmt, *args: print(fmt % args, file=sys.stderr, flush=True)
     MODULE.rospy.loginfo = lambda *args: None
     def stop(*args):

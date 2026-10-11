@@ -69,8 +69,11 @@ class CameraPeer:
                         raise RuntimeError("peer is not ready")
                     reference = ServiceRef.from_dict(description.get("facts", {}).get("service_ref", description.get("service_ref"))).validate()
                     if (reference.service != self.service or reference.api_version != "v1" or
+                            reference.profile != "http.v1" or reference.endpoint.kind != "unix" or
                             reference.target_id != self.target_id or reference.endpoint.address != self.endpoint):
                         raise ValueError("camera peer does not match the allocated endpoint and target grant")
+                    if reference.instance_id != self.status.get("instance_id"):
+                        self.status["applied_revision"] = 0
                     self._client = Client.from_service(reference, runtime=self._runtime, local_target=self.target_id)
                     observation = self.reconcile(self._client, description, self.stop)
                     self.status.update(state="connected", instance_id=reference.instance_id, applied_revision=1)

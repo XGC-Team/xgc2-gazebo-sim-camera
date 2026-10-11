@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import yaml
@@ -37,10 +38,37 @@ definition = json.loads(
     (root / "process-definitions/gazebo-static-camera.json").read_text(encoding="utf-8")
 )
 for entry in definition["definitions"]:
+    assert entry["readiness"] == {"kind": "none"}
+    assert "services" not in entry and "publishAs" not in entry
+    properties = entry["parameters"]["properties"]
+    required = entry["parameters"]["required"]
+    assert not any("serviceref" in name.lower() for name in properties)
+    for parameter in ("simulationEndpoint", "mediaControlEndpoint"):
+        assert properties[parameter]["type"] == "string"
+        assert properties[parameter]["fixedOnly"] is True
+        assert parameter in required
+    assert "mediaControlTargetId" in required and "targetId" in required
+    assert properties["mediaRtpPort"]["type"] == "integer"
+    assert properties["mediaRtpPort"]["minimum"] == 1
+    assert properties["mediaRtpPort"]["maximum"] == 65535
+    assert "default" not in properties["mediaRtpPort"]
+    assert "mediaRtpPort" in required
+    assert properties["mediaRtpHost"]["default"] == "127.0.0.1"
     command = entry["command"]["args"]
     separator = command.index("--")
     assert command[separator + 1].endswith("/roslaunch"), command[separator + 1]
     assert command[separator + 2] == "--wait", command[separator + 2]
+    assert "simulation_endpoint:=${simulationEndpoint}" in command
+    assert "media_rtp_port:=${mediaRtpPort}" in command
+    assert "media_rtp_host:=${mediaRtpHost}" in command
+
+for document in (launch, intrinsic, extrinsic):
+    arguments = {arg.get("name"): arg for arg in ET.fromstring(document).findall("arg")}
+    assert "simulation_service_ref_json" not in arguments
+    assert "default" not in arguments["simulation_endpoint"].attrib
+    assert "default" not in arguments["media_rtp_port"].attrib
+assert 'sdf->HasElement("rtpPort")' in media_plugin
+assert 'SDFValue<int>(sdf, "rtpPort",' not in media_plugin
 
 assert profiles["schema_version"] == 1
 assert profiles["default_profile"] == "world_wide_4k30_110"

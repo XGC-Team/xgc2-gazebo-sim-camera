@@ -54,14 +54,14 @@ usage:
     '
   smoke_test: |
     roslaunch --files gazebo_sim_camera static_camera.launch gui:=false \
-      world:="$SIMULATION_WORLD_FILE" simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
-      media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON"
+      world:="$SIMULATION_WORLD_FILE" simulation_endpoint:="$SIMULATION_ENDPOINT" target_id:="$SIMULATION_TARGET_ID" \
+      media_rtp_port:="$MEDIA_RTP_PORT" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON"
     roslaunch --files gazebo_sim_camera intrinsic_calibration_world.launch gui:=false \
-      world:="$SIMULATION_WORLD_FILE" simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
-      media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON"
+      world:="$SIMULATION_WORLD_FILE" simulation_endpoint:="$SIMULATION_ENDPOINT" target_id:="$SIMULATION_TARGET_ID" \
+      media_rtp_port:="$MEDIA_RTP_PORT" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON"
     roslaunch --files gazebo_sim_camera extrinsic_calibration_world.launch gui:=false vrpn_config:="$VRPN_CONFIG_FILE" \
-      world:="$SIMULATION_WORLD_FILE" simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
-      media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON"
+      world:="$SIMULATION_WORLD_FILE" simulation_endpoint:="$SIMULATION_ENDPOINT" target_id:="$SIMULATION_TARGET_ID" \
+      media_rtp_port:="$MEDIA_RTP_PORT" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON"
   notes: 'This product owns only an independent fixed-site camera. It does not modify
 
     or depend on any FS150, Scout, UAV, or other vehicle camera model.

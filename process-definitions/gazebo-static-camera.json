@@ -123,22 +123,28 @@
           },
           "mediaRtpPort": {
             "type": "integer",
-            "default": 5004,
+            "description": "Per-camera RTP port allocated by Core from the camera inventory row.",
             "minimum": 1,
             "maximum": 65535
           },
+          "mediaRtpHost": {
+            "type": "string",
+            "default": "127.0.0.1"
+          },
           "mediaControlEndpoint": {
             "type": "string",
-            "description": "Pre-allocated Unix source-control socket bound by the camera plugin."
+            "fixedOnly": true,
+            "description": "Camera-source Unix socket served by the plugin inside gzserver; Core passes the camera inventory's opaque rendezvous path."
           },
           "world": {
             "type": "string",
             "description": "Prepared SDF world artifact required by the native camera launch.",
             "x-xgc-path-kind": "file"
           },
-          "simulationServiceRefJson": {
-            "type": "json",
-            "description": "Pre-allocated simulation-v1 HTTP ServiceRef; the camera owner discovers the bound world instance at its endpoint."
+          "simulationEndpoint": {
+            "type": "string",
+            "fixedOnly": true,
+            "description": "Pre-allocated world host Unix socket path; discover the current world instance lazily at this opaque rendezvous endpoint."
           },
           "targetId": {
             "type": "string",
@@ -211,10 +217,11 @@
         },
         "required": [
           "world",
-          "simulationServiceRefJson",
+          "simulationEndpoint",
           "targetId",
           "mediaControlEndpoint",
           "mediaControlTargetId",
+          "mediaRtpPort",
           "pythonExecutable"
         ]
       },
@@ -251,7 +258,7 @@
           "gazebo_sim_camera",
           "static_camera.launch",
           "world:=${world}",
-          "simulation_service_ref_json:=${simulationServiceRefJson}",
+          "simulation_endpoint:=${simulationEndpoint}",
           "target_id:=${targetId}",
           "media_control_target_id:=${mediaControlTargetId}",
           "python_executable:=${pythonExecutable}",
@@ -271,6 +278,7 @@
           "snapshot_jpeg_backend:=${snapshotJpegBackend}",
           "media_source_id:=${mediaSourceId}",
           "media_rtp_port:=${mediaRtpPort}",
+          "media_rtp_host:=${mediaRtpHost}",
           "media_control_endpoint:=${mediaControlEndpoint}",
           "x:=${x}",
           "y:=${y}",

@@ -43,10 +43,7 @@ def worker(kind, endpoint):
     elif kind == "pose":
         from geometry_msgs.msg import Pose
         from keyboard_camera_teleop import CameraPosePublisher
-        reference = {"target_id": "fixture", "service": "xgc2.simulation", "api_version": "v1",
-                     "instance_id": "0" * 32, "profile": "http.v1",
-                     "endpoint": {"kind": "unix", "address": endpoint}}
-        owner = CameraPosePublisher("camera", json.dumps(reference), "fixture")
+        owner = CameraPosePublisher("camera", endpoint, "fixture")
         assert owner._peer is None
         # Saturate wake notifications during an outage; only the latest pose
         # survives, and the caller continues serving without pipe contention.
@@ -64,10 +61,7 @@ def worker(kind, endpoint):
         tf.quaternion_from_euler = lambda *args: [0, 0, 0, 1]
         sys.modules["tf.transformations"] = tf
         from native_camera_entity import NativeCameraEntity
-        reference = {"target_id": "fixture", "service": "xgc2.simulation", "api_version": "v1",
-                     "instance_id": "0" * 32, "profile": "http.v1",
-                     "endpoint": {"kind": "unix", "address": endpoint}}
-        owner = NativeCameraEntity(json.dumps(reference), "fixture", "camera", "<robot name='camera'/>",
+        owner = NativeCameraEntity(endpoint, "fixture", "camera", "<robot name='camera'/>",
                                    [0, 0, 0], [0, 0, 0, 1])
         peer = owner._peer
     try:
@@ -162,12 +156,13 @@ def resources(pid):
 
 
 class PeerStartOrderTest(unittest.TestCase):
-    def exercise(self, kind, duration, lose_reply=False):
+    def exercise(self, kind, duration, lose_reply=False, socket_absent=False):
         with tempfile.TemporaryDirectory(prefix="camera-peer-test-") as directory:
-            endpoint = str(Path(directory) / "peer.sock")
+            endpoint = str(Path(directory) / ("a" * 32 + ".sock"))
             # A leftover socket path exercises actual transport failure/backoff,
             # rather than only the zero-connect socket-appearance path.
-            Path(endpoint).touch()
+            if not socket_absent:
+                Path(endpoint).touch()
             with (Path(directory) / "worker.log").open("w+") as log:
                 process = subprocess.Popen([sys.executable, __file__, "--worker", kind, endpoint],
                                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log,
@@ -202,14 +197,20 @@ class PeerStartOrderTest(unittest.TestCase):
                     lines = log.read().splitlines()
                     self.assertLessEqual(state["attempts"], 18 if duration == 60 else 8)
                     self.assertLessEqual(len(lines), 7 if duration == 60 else 2, "\n".join(lines))
+                    if socket_absent:
+                        self.assertEqual(state["attempts"], 0)
+                        self.assertEqual(lines, [])
                     self.assertLessEqual(after[1], before[1])
                     self.assertLessEqual(after[2], before[2])
                     if duration == 60:
                         self.assertLess(after[0] - before[0], 1.2)
-                    Path(endpoint).unlink()
+                    if Path(endpoint).exists():
+                        Path(endpoint).unlink()
                     peer = FakePeer(kind, endpoint, "1" * 32, lose_reply=lose_reply)
-                    wait_connected()
+                    connected = wait_connected()
+                    self.assertEqual(connected["desired_revision"], connected["applied_revision"])
                     self.assertEqual(peer.writes, 1)
+                    specification = peer.entity["specification"] if kind == "world" else None
                     if kind == "pose":
                         self.assertEqual(peer.entity["state"]["pose"]["position"], [3, 0, 0])
                     if kind == "source":
@@ -225,6 +226,8 @@ class PeerStartOrderTest(unittest.TestCase):
                         connected = status()
                     self.assertEqual(connected["instance_id"], "2" * 32)
                     self.assertEqual(peer.writes, 1)
+                    if kind == "world":
+                        self.assertEqual(peer.entity["specification"], specification)
                     time.sleep(.2)
                     self.assertEqual(peer.writes, 1)
                     print(json.dumps({"kind": kind, "outage_seconds": duration,
@@ -252,6 +255,12 @@ class PeerStartOrderTest(unittest.TestCase):
     def test_world_late_and_restarted(self):
         self.exercise("world", 1)
 
+    def test_spawner_before_world_socket_exists(self):
+        self.exercise("world", 1, socket_absent=True)
+
+    def test_contract_publisher_before_plugin_socket_exists(self):
+        self.exercise("source", 1, socket_absent=True)
+
     def test_pose_is_lazy_latest_wins_and_replayed_after_restart(self):
         self.exercise("pose", 1)
 
@@ -267,7 +276,7 @@ class PeerStartOrderTest(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("XGC_LONG_TESTS") == "1", "60-second outage cell")
     def test_world_down_for_sixty_seconds(self):
-        self.exercise("world", 60)
+        self.exercise("world", 60, socket_absent=True)
 
 
 if __name__ == "__main__":

@@ -18,11 +18,12 @@ def load_profiles():
     return yaml.safe_load(PROFILE_PATH.read_text(encoding="utf-8"))
 
 
-def expand_profile(profile_name, *mappings):
+def expand_profile(profile_name, *mappings, rtp_port=26417):
     command = [
         "/opt/ros/noetic/bin/xacro",
         str(XACRO_PATH),
         "camera_profile:={}".format(profile_name),
+        "media_rtp_port:={}".format(rtp_port),
         *mappings,
     ]
     completed = subprocess.run(
@@ -44,6 +45,15 @@ def sensor_from(robot):
 
 
 class WorldCameraProfilesTest(unittest.TestCase):
+    def test_rtp_port_is_required_and_each_camera_keeps_its_allocation(self):
+        missing = subprocess.run(["/opt/ros/noetic/bin/xacro", str(XACRO_PATH)], cwd=str(ROOT),
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn("media_rtp_port", missing.stderr)
+        for port in (26417, 26419):
+            sensor = sensor_from(expand_profile("world_wide_4k30_110", rtp_port=port))
+            self.assertEqual(int(sensor.findtext("plugin[@name='xgc_media_camera']/rtpPort")), port)
+
     def test_checked_in_profiles_have_a_strict_supported_shape(self):
         document = load_profiles()
         self.assertEqual(document["schema_version"], 1)
