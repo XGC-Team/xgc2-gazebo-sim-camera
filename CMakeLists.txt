@@ -117,11 +117,8 @@ install(TARGETS xgc_gazebo_media_camera
 
 catkin_install_python(PROGRAMS
   scripts/place_world_camera
-  scripts/native_camera_entity.py
   scripts/camera_contract_publisher.py
   scripts/camera_contract_test.py
-  scripts/drive_intrinsic_calibration.py
-  scripts/keyboard_camera_teleop.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 install(FILES scripts/camera_peer.py DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
@@ -142,7 +139,6 @@ install(DIRECTORY
 
 if(CATKIN_ENABLE_TESTING)
   catkin_add_nosetests(test/test_camera_intrinsic_selection.py)
-  catkin_add_nosetests(test/test_keyboard_camera_teleop.py)
   catkin_add_nosetests(test/test_parallel_launch.py)
   catkin_add_nosetests(test/test_peer_start_order.py)
   add_library(test_snapshot_jpeg_hardware_plugin SHARED
@@ -190,11 +186,7 @@ if(CATKIN_ENABLE_TESTING)
   target_include_directories(camera_source_control_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
   target_link_libraries(camera_source_control_test XgcXrpc::http PkgConfig::XGC_JSONCPP Threads::Threads)
   add_test(NAME camera_source_control COMMAND camera_source_control_test)
-  catkin_add_nosetests(test/test_intrinsic_sweep.py)
-  catkin_add_nosetests(test/test_keyboard_camera_teleop.py)
   catkin_add_nosetests(test/test_world_camera_profiles.py)
-  # test/static_camera_contract.test is the live Gazebo contract. It needs a
-  # prepared world, the world's simulation service reference and a media
-  # control endpoint (launch arguments without defaults), so it is run by
-  # .xgc2/scripts/check_gazebo_shutdown.sh on a station, not registered here.
+  # The live ROS contracts require an already placed camera and its source
+  # endpoint. They are explicit station checks, not packaging build tests.
 endif()

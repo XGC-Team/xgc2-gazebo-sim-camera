@@ -1,15 +1,6 @@
 <?xml version="1.0"?>
 <launch>
-  <arg name="start_scene" default="true"/>
-  <arg name="mode" default="truth"/>
-  <arg name="publish_truth_tf" default="true"/>
-  <arg name="gui" default="true"/>
   <arg name="rviz" default="true"/>
-  <include if="$(arg start_scene)" file="$(find gazebo_sim_camera)/launch/extrinsic_calibration_world.launch">
-    <arg name="mode" value="$(arg mode)"/>
-    <arg name="publish_truth_tf" value="$(arg publish_truth_tf)"/>
-    <arg name="gui" value="$(arg gui)"/>
-  </include>
   <node if="$(arg rviz)" pkg="rviz" type="rviz" name="gazebo_static_camera_ar"
         args="-d $(find gazebo_sim_camera)/rviz/camera_ar.rviz" output="screen"/>
 </launch>

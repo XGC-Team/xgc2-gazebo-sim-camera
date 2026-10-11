@@ -1,16 +1,8 @@
 <?xml version="1.0"?>
 <launch>
-  <arg name="paused" default="false"/>
-  <arg name="gui" default="true"/>
-  <arg name="keyboard_gui" default="false"/>
+  <!-- Per-camera ROS runtime. Core owns the world and finite placement. -->
   <arg name="use_sim_time" default="true"/>
-  <arg name="start_gazebo" default="true"/>
-  <arg name="vrpn_config" default=""/>
-  <arg name="world"/>
-
   <arg name="model_name" default="gazebo_static_camera"/>
-  <arg name="simulation_endpoint"/>
-  <arg name="target_id"/>
   <arg name="camera_link_frame" default="usb_cam_link"/>
   <arg name="optical_frame" default="usb_cam_optical_frame"/>
   <arg name="camera_profile" default="world_wide_4k30_110"/>
@@ -18,131 +10,31 @@
   <arg name="camera_profiles_file"
        default="$(find gazebo_sim_camera)/config/world_camera_profiles.yaml"/>
   <arg name="intrinsic_file" default=""/>
-  <!-- Accept an absolute path for source-development images. The sensor
-       plugin is loaded by the already-running gzserver process, so a
-       GAZEBO_PLUGIN_PATH added only to this roslaunch process is too late. -->
-  <arg name="media_plugin_filename" default="libxgc_gazebo_media_camera.so"/>
   <arg name="media_source_id" default="usb_cam"/>
-  <arg name="media_rtp_host" default="127.0.0.1"/>
-  <arg name="media_rtp_port"/>
   <arg name="media_control_endpoint"/>
   <arg name="media_control_target_id"/>
   <arg name="python_executable"/>
-  <arg name="media_control_instance_id" default=""/>
-  <arg name="publish_encoded_video" default="true"/>
-  <arg name="encoded_video_topic" default="/xgc/camera/world/video_h264"/>
-  <arg name="frame_timing_topic" default="/xgc/camera/world/frame_timing"/>
-  <arg name="stream_info_topic" default="/xgc/camera/world/stream_info"/>
-  <arg name="encoded_publisher_queue_capacity" default="8"/>
-  <!--
-    The encoder has three deliberately separate budgets:
-      * average bitrate: sustainable link budget;
-      * max bitrate / VBV: bits an IDR may borrow without visibly collapsing;
-      * pacing bitrate: short RTP burst ceiling, so one IDR cannot overflow
-        the loopback receiver or block the Gazebo render callback.
-    Keep media_bitrate <= media_max_bitrate <= media_pacing_bitrate.
-  -->
-  <arg name="media_bitrate" default="profile"/>
-  <arg name="media_max_bitrate" default="profile"/>
-  <arg name="media_pacing_bitrate" default="profile"/>
-  <arg name="media_vbv_buffer_milliseconds" default="profile"/>
-  <arg name="snapshot_jpeg_quality" default="profile"/>
-  <!-- auto prefers a fully preflighted optional GPU JPEG backend and falls
-       back to the asynchronous PBO/CPU path. hardware is strict; cpu never
-       probes an accelerator. -->
-  <arg name="snapshot_jpeg_backend" default="auto"/>
   <arg name="gt_camera_link_frame" default="usb_cam_link_gt"/>
   <arg name="gt_optical_frame" default="usb_cam_optical_frame_gt"/>
   <arg name="parent_frame" default="world"/>
-  <!-- camera_->WorldPose() is expressed in the Gazebo world frame. Keep this
-       independent from the ROS TF parent override so snapshot evidence never
-       mislabels its coordinate domain. -->
-  <arg name="snapshot_pose_frame_id" default="world"/>
   <arg name="width" default="profile"/>
   <arg name="height" default="profile"/>
-  <arg name="fps" default="profile"/>
-  <!-- The public FOV contract is degrees, matching the WebUI and profile file. -->
   <arg name="hfov_degrees" default="profile"/>
-  <arg name="near_clip" default="profile"/>
-  <arg name="far_clip" default="profile"/>
-  <arg name="noise_stddev" default="profile"/>
-  <!-- static:=true pins the fixed-site camera (default product behavior).
-       static:=false keeps it in physics with gravity off. Native pose control
-       uses the world-owned simulation-v1 provider. -->
-  <arg name="static" default="true"/>
-
   <arg name="x" default="-4.0"/>
   <arg name="y" default="0.0"/>
   <arg name="z" default="1.5"/>
   <arg name="roll" default="0.0"/>
   <arg name="pitch" default="0.0"/>
   <arg name="yaw" default="0.0"/>
-
-  <!--
-    truth: owns the official camera TF chain.
-    calibration: owns no camera TF.
-    validation: publishes truth only on the disjoint *_gt chain.
-  -->
   <arg name="mode" default="truth"/>
   <arg name="publish_truth_tf" default="true"/>
-  <!-- Stable XGC-owned camera contract. The Gazebo topics above remain an
-       implementation detail and are never required by visualization clients. -->
   <arg name="calibration_root" default=""/>
   <arg name="resolved_extrinsic_json" default=""/>
   <arg name="frame_roles_json" default=""/>
   <arg name="publish_xgc_contract" default="true"/>
-  <arg name="xgc_camera_info_topic" default="/xgc/camera/world/camera_info"/>
   <arg name="xgc_transform_topic" default="/xgc/camera/world/tf"/>
 
   <param name="use_sim_time" value="$(arg use_sim_time)"/>
-  <!-- world is the SDF artifact produced by the explicit native provider
-       prepare phase, including the authored simulation-v1 socket binding. -->
-  <include if="$(arg start_gazebo)" file="$(find gazebo_sim_worlds)/launch/native_world.launch">
-    <arg name="world" value="$(arg world)"/>
-    <arg name="paused" value="$(arg paused)"/>
-    <arg name="gui" value="$(eval arg('gui') and not arg('keyboard_gui'))"/>
-    <arg name="ros_data" value="true"/>
-    <arg name="vrpn_config" value="$(arg vrpn_config)"/>
-  </include>
-
-  <node if="$(eval arg('gui') and arg('keyboard_gui'))"
-        pkg="gazebo_ros" type="gzclient" name="gazebo_gui" output="screen"
-        args="--gui-client-plugin libKeyboardGUIPlugin.so"/>
-
-  <param name="$(arg model_name)_description"
-         command="xacro '$(dirname)/../urdf/fixed_rgb_camera.urdf.xacro'
-           model_name:=$(arg model_name)
-           camera_link_frame:=$(arg camera_link_frame)
-           optical_frame:=$(arg optical_frame)
-           camera_profile:=$(arg camera_profile)
-           camera_profiles_file:=$(arg camera_profiles_file)
-           media_plugin_filename:=$(arg media_plugin_filename)
-           width:=$(arg width) height:=$(arg height) fps:=$(arg fps)
-           hfov_degrees:=$(arg hfov_degrees)
-           near_clip:=$(arg near_clip) far_clip:=$(arg far_clip) noise_stddev:=$(arg noise_stddev)
-           static:=$(arg static)
-           media_source_id:=$(arg media_source_id) media_rtp_host:=$(arg media_rtp_host)
-           media_rtp_port:=$(arg media_rtp_port) media_control_endpoint:=$(arg media_control_endpoint) media_control_target_id:=$(arg media_control_target_id)
-           media_control_instance_id:=$(arg media_control_instance_id)
-           snapshot_pose_frame_id:=$(arg snapshot_pose_frame_id)
-           publish_encoded_video:=$(arg publish_encoded_video)
-           encoded_video_topic:=$(arg encoded_video_topic)
-           frame_timing_topic:=$(arg frame_timing_topic)
-           stream_info_topic:=$(arg stream_info_topic)
-           camera_info_topic:=$(arg xgc_camera_info_topic)
-           encoded_publisher_queue_capacity:=$(arg encoded_publisher_queue_capacity)
-           media_bitrate:=$(arg media_bitrate) media_max_bitrate:=$(arg media_max_bitrate)
-           media_pacing_bitrate:=$(arg media_pacing_bitrate)
-           media_vbv_buffer_milliseconds:=$(arg media_vbv_buffer_milliseconds)
-           snapshot_jpeg_quality:=$(arg snapshot_jpeg_quality)
-           snapshot_jpeg_backend:=$(arg snapshot_jpeg_backend)"/>
-
-  <node pkg="gazebo_sim_camera" type="native_camera_entity.py" launch-prefix="$(arg python_executable)"
-        name="$(arg model_name)_native_entity" output="screen"
-        args="--simulation-endpoint '$(arg simulation_endpoint)' --target-id $(arg target_id) --model-name $(arg model_name)
-          --description-param $(arg model_name)_description
-          --x $(arg x) --y $(arg y) --z $(arg z)
-          --roll $(arg roll) --pitch $(arg pitch) --yaw $(arg yaw)"/>
 
   <node if="$(arg publish_xgc_contract)"
         pkg="gazebo_sim_camera" type="camera_contract_publisher.py" launch-prefix="$(arg python_executable)"

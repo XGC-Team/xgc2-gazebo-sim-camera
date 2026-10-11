@@ -5,7 +5,7 @@
       "id": "gazebo-static-camera",
       "version": "1.5.0",
       "label": "Gazebo fixed-site RGB camera",
-      "description": "Adds the managed 3840x2160 30 fps 110-degree H264 camera to the allocated Gazebo Classic scene, tolerating parallel startup. One encoded access unit is fanned out to loopback RTP for paired XGC media-edge browser preview and to an asynchronous ROS encoded-video publisher for scientific recording.",
+      "description": "Runs the per-camera ROS CameraInfo metadata registration and TF publishers. Core starts this runtime in parallel with media-edge, then places the camera through the finite placement CLI after awaiting the world. The camera-source authority is the plugin inside gzserver.",
       "parameters": {
         "groups": [
           {
@@ -22,20 +22,6 @@
             "type": "string",
             "default": "http://127.0.0.1:11311",
             "output": true
-          },
-          "gazeboMasterPort": {
-            "type": "integer",
-            "default": 11345,
-            "minimum": 1,
-            "maximum": 65535
-          },
-          "startGazebo": {
-            "type": "boolean",
-            "default": false
-          },
-          "cameraStatic": {
-            "type": "boolean",
-            "default": true
           },
           "modelName": {
             "type": "string",
@@ -83,7 +69,7 @@
           "extrinsicFile": {
             "type": "string",
             "default": "",
-            "description": "Explicit extrinsics-UTC.yaml used when poseSource is file. Physical or simulation partitions are allowed when parent_frame is world.",
+            "description": "Explicit extrinsics-UTC.yaml used for runtime TF when poseSource is file.",
             "x-xgc-path-kind": "file",
             "x-xgc-file-extensions": [
               ".yaml"
@@ -91,7 +77,7 @@
           },
           "poseSource": {
             "type": "string",
-            "description": "authored uses x/y/z/rpy. file applies one explicit extrinsics-UTC.yaml as the Gazebo camera-link spawn pose.",
+            "description": "authored uses x/y/z/rpy for runtime TF. file or resolved initializes TF from the selected extrinsic. Placement receives its pose separately.",
             "default": "authored",
             "enum": [
               "authored",
@@ -107,48 +93,14 @@
             "type": "string",
             "default": "usb_cam_optical_frame"
           },
-          "snapshotJpegBackend": {
-            "type": "string",
-            "description": "Snapshot JPEG policy: auto may use a preflighted accelerator and fall back; hardware is strict; cpu never probes hardware",
-            "default": "auto",
-            "enum": [
-              "auto",
-              "hardware",
-              "cpu"
-            ]
-          },
           "mediaSourceId": {
             "type": "string",
             "default": "usb_cam"
-          },
-          "mediaRtpPort": {
-            "type": "integer",
-            "description": "Per-camera RTP port allocated by Core from the camera inventory row.",
-            "minimum": 1,
-            "maximum": 65535
-          },
-          "mediaRtpHost": {
-            "type": "string",
-            "default": "127.0.0.1"
           },
           "mediaControlEndpoint": {
             "type": "string",
             "fixedOnly": true,
             "description": "Camera-source Unix socket served by the plugin inside gzserver; Core passes the camera inventory's opaque rendezvous path."
-          },
-          "world": {
-            "type": "string",
-            "description": "Prepared SDF world artifact required by the native camera launch.",
-            "x-xgc-path-kind": "file"
-          },
-          "simulationEndpoint": {
-            "type": "string",
-            "fixedOnly": true,
-            "description": "Pre-allocated world host Unix socket path; discover the current world instance lazily at this opaque rendezvous endpoint."
-          },
-          "targetId": {
-            "type": "string",
-            "description": "Local target identity granted to the native camera entity."
           },
           "mediaControlTargetId": {
             "type": "string",
@@ -162,27 +114,33 @@
           },
           "x": {
             "type": "number",
-            "default": -4.0
+            "default": -4.0,
+            "description": "Runtime TF pose; must match the separately placed camera when publishing truth."
           },
           "y": {
             "type": "number",
-            "default": 0.0
+            "default": 0.0,
+            "description": "Runtime TF pose; must match the separately placed camera when publishing truth."
           },
           "z": {
             "type": "number",
-            "default": 1.5
+            "default": 1.5,
+            "description": "Runtime TF pose; must match the separately placed camera when publishing truth."
           },
           "roll": {
             "type": "number",
-            "default": 0.0
+            "default": 0.0,
+            "description": "Runtime TF pose; must match the separately placed camera when publishing truth."
           },
           "pitch": {
             "type": "number",
-            "default": 0.0
+            "default": 0.0,
+            "description": "Runtime TF pose; must match the separately placed camera when publishing truth."
           },
           "yaw": {
             "type": "number",
-            "default": 0.0
+            "default": 0.0,
+            "description": "Runtime TF pose; must match the separately placed camera when publishing truth."
           },
           "mode": {
             "type": "string",
@@ -201,10 +159,6 @@
             "type": "boolean",
             "default": true
           },
-          "gui": {
-            "type": "boolean",
-            "default": false
-          },
           "resolvedExtrinsicJson": {
             "type": "string",
             "description": "One immutable extrinsic resolution produced by the camera workflow.",
@@ -216,12 +170,8 @@
           }
         },
         "required": [
-          "world",
-          "simulationEndpoint",
-          "targetId",
           "mediaControlEndpoint",
           "mediaControlTargetId",
-          "mediaRtpPort",
           "pythonExecutable"
         ]
       },
@@ -257,13 +207,8 @@
           "--wait",
           "gazebo_sim_camera",
           "static_camera.launch",
-          "world:=${world}",
-          "simulation_endpoint:=${simulationEndpoint}",
-          "target_id:=${targetId}",
           "media_control_target_id:=${mediaControlTargetId}",
           "python_executable:=${pythonExecutable}",
-          "start_gazebo:=${startGazebo}",
-          "static:=${cameraStatic}",
           "use_sim_time:=true",
           "model_name:=${modelName}",
           "camera_link_frame:=${cameraLinkFrame}",
@@ -275,10 +220,7 @@
           "camera_name:=${cameraName}",
           "calibration_root:=${calibrationRoot}",
           "intrinsic_file:=${intrinsicFile}",
-          "snapshot_jpeg_backend:=${snapshotJpegBackend}",
           "media_source_id:=${mediaSourceId}",
-          "media_rtp_port:=${mediaRtpPort}",
-          "media_rtp_host:=${mediaRtpHost}",
           "media_control_endpoint:=${mediaControlEndpoint}",
           "x:=${x}",
           "y:=${y}",
@@ -289,12 +231,9 @@
           "mode:=${mode}",
           "publish_truth_tf:=${publishTruthTf}",
           "publish_xgc_contract:=${publishXgcContract}",
-          "xgc_camera_info_topic:=/xgc/camera/world/camera_info",
-          "xgc_transform_topic:=/xgc/camera/world/tf",
-          "gui:=${gui}"
+          "xgc_transform_topic:=/xgc/camera/world/tf"
         ],
         "env": {
-          "GAZEBO_MASTER_URI": "http://127.0.0.1:${gazeboMasterPort}",
           "ROS_MASTER_URI": "${rosMasterUri}"
         }
       },
