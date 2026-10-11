@@ -35,6 +35,7 @@ docker run --rm \
     fi
     apt-get update
     apt-get install -y --no-install-recommends \
+      libxgc2-xrpc-dev \
       ros-noetic-xgc2-camera-msgs \
       ros-noetic-xgc2-gazebo-sim-worlds
     rm -rf /workspace/work/src /workspace/work/build /workspace/work/devel /workspace/work/install-root
