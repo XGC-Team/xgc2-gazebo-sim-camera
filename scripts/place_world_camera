@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""Render and place one world camera without a ROS node or parameter server."""
+import argparse
+import contextlib
+import io
+import json
+import math
+import os
+from pathlib import Path
+import re
+import sys
+import time
+import xml.etree.ElementTree as ET
+
+
+NAME = "place_world_camera"
+ROS_PYTHON = "/opt/ros/noetic/lib/python3/dist-packages"
+
+
+class UsageError(ValueError):
+    pass
+
+
+class Parser(argparse.ArgumentParser):
+    def error(self, message):
+        raise UsageError(message)
+
+
+def parse_arguments(argv):
+    share = Path(__file__).resolve().parents[1]
+    if not (share / "urdf/fixed_rgb_camera.urdf.xacro").is_file():
+        share = Path("/opt/ros/noetic/share/gazebo_sim_camera")
+    parser = Parser(prog=NAME, description=__doc__, allow_abbrev=False,
+                    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--world-endpoint", required=True, help="canonical absolute world socket path")
+    parser.add_argument("--target-id", required=True, help="world target grant")
+    parser.add_argument("--media-control-endpoint", required=True, help="canonical absolute camera-source socket path")
+    parser.add_argument("--media-control-target-id", required=True, help="camera-source target grant")
+    parser.add_argument("--media-rtp-port", required=True, type=int, help="allocated RTP port, 1-65535")
+    defaults = {
+        "model_name": "gazebo_static_camera",
+        "camera_link_frame": "usb_cam_link", "optical_frame": "usb_cam_optical_frame",
+        "camera_profile": "world_wide_4k30_110",
+        "camera_profiles_file": str(share / "config/world_camera_profiles.yaml"),
+        "media_plugin_filename": "libxgc_gazebo_media_camera.so",
+        "media_source_id": "usb_cam", "media_rtp_host": "127.0.0.1",
+        "media_control_instance_id": "", "snapshot_pose_frame_id": "world",
+        "encoded_video_topic": "/xgc/camera/world/video_h264",
+        "frame_timing_topic": "/xgc/camera/world/frame_timing",
+        "stream_info_topic": "/xgc/camera/world/stream_info",
+        "xgc_camera_info_topic": "/xgc/camera/world/camera_info",
+    }
+    for name, default in defaults.items():
+        parser.add_argument("--" + name.replace("_", "-"), default=default, help=name.replace("_", " "))
+    for name in ("width", "height", "fps", "hfov_degrees", "near_clip", "far_clip", "noise_stddev",
+                 "media_bitrate", "media_max_bitrate", "media_pacing_bitrate",
+                 "media_vbv_buffer_milliseconds", "snapshot_jpeg_quality"):
+        parser.add_argument("--" + name.replace("_", "-"), default="profile", help="numeric override or profile")
+    for name in ("static", "publish_encoded_video"):
+        parser.add_argument("--" + name.replace("_", "-"), choices=("true", "false"), default="true", help=name.replace("_", " "))
+    parser.add_argument("--snapshot-jpeg-backend", choices=("auto", "hardware", "cpu"), default="auto", help="snapshot JPEG policy")
+    parser.add_argument("--encoded-publisher-queue-capacity", type=int, default=8, help="ROS publisher queue, 1-128")
+    for name, default in (("x", -4.0), ("y", 0.0), ("z", 1.5), ("roll", 0.0), ("pitch", 0.0), ("yaw", 0.0)):
+        parser.add_argument("--" + name, type=float, default=default, help="camera pose in metres/radians")
+    parser.add_argument("--timeout", type=float, default=50.0, help="whole-run deadline in seconds, (0, 55]")
+    args = parser.parse_args(argv)
+    for name in ("world_endpoint", "media_control_endpoint"):
+        value = getattr(args, name)
+        if (not os.path.isabs(value) or value.startswith("//") or os.path.normpath(value) != value
+                or "\0" in value or len(os.fsencode(value)) > 107):
+            raise UsageError("--" + name.replace("_", "-") + " must be a canonical absolute Unix socket path (at most 107 bytes)")
+    for name in ("model_name", "media_source_id", "media_control_target_id"):
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", getattr(args, name)):
+            raise UsageError("--" + name.replace("_", "-") + " must be a bounded identifier")
+    if not args.target_id or args.target_id.strip() != args.target_id or any(ord(c) < 32 for c in args.target_id):
+        raise UsageError("--target-id must be a nonempty canonical string")
+    if not 1 <= args.media_rtp_port <= 65535:
+        raise UsageError("--media-rtp-port must be in 1-65535")
+    if args.media_rtp_host not in ("127.0.0.1", "localhost"):
+        raise UsageError("--media-rtp-host must be 127.0.0.1 or localhost")
+    if not 1 <= args.encoded_publisher_queue_capacity <= 128:
+        raise UsageError("--encoded-publisher-queue-capacity must be in 1-128")
+    if not math.isfinite(args.timeout) or not 0 < args.timeout <= 55:
+        raise UsageError("--timeout must be in (0, 55] seconds")
+    if not all(math.isfinite(getattr(args, name)) for name in ("x", "y", "z", "roll", "pitch", "yaw")):
+        raise UsageError("camera pose must contain finite values")
+    for name in ("camera_link_frame", "optical_frame", "snapshot_pose_frame_id", "media_plugin_filename",
+                 "camera_profile", "encoded_video_topic", "frame_timing_topic", "stream_info_topic", "xgc_camera_info_topic"):
+        if not getattr(args, name).strip():
+            raise UsageError("--" + name.replace("_", "-") + " must be nonempty")
+    return args, share
+
+
+def render_camera(args, share):
+    # ROS supplies installed model/rendering modules only; no ROS initialization.
+    sys.path.append(ROS_PYTHON)
+    import xacro
+    mappings = {name: str(value) for name, value in vars(args).items()
+                if name not in ("world_endpoint", "target_id", "timeout", "x", "y", "z", "roll", "pitch", "yaw")}
+    mappings["camera_info_topic"] = mappings.pop("xgc_camera_info_topic")
+    document = xacro.process_file(str(share / "urdf/fixed_rgb_camera.urdf.xacro"), mappings=mappings).toxml()
+    sensor = ET.fromstring(document).find(".//sensor[@name='rgb_camera']")
+    plugin = sensor.find("plugin")
+    bounds = (
+        ("width", sensor.findtext("camera/image/width"), int, 16, 4096),
+        ("height", sensor.findtext("camera/image/height"), int, 16, 2160),
+        ("fps", sensor.findtext("update_rate"), float, 0.1, 240),
+        ("noise-stddev", sensor.findtext("camera/noise/stddev"), float, 0, float("inf")),
+        ("media-bitrate", plugin.findtext("bitrate"), int, 128000, 2147483647),
+        ("media-max-bitrate", plugin.findtext("maxBitrate"), int, 128000, 2147483647),
+        ("media-pacing-bitrate", plugin.findtext("pacingBitrate"), int, 128000, 2147483647),
+        ("media-vbv-buffer-milliseconds", plugin.findtext("vbvBufferMilliseconds"), int, 50, 2000),
+        ("snapshot-jpeg-quality", plugin.findtext("jpegQuality"), int, 50, 100),
+    )
+    for name, text, convert, minimum, maximum in bounds:
+        value = convert(text)
+        if not math.isfinite(value) or not minimum <= value <= maximum:
+            raise UsageError("--" + name + " is outside the supported range")
+    hfov = float(sensor.findtext("camera/horizontal_fov"))
+    near, far = (float(sensor.findtext("camera/clip/" + name)) for name in ("near", "far"))
+    if not math.isfinite(hfov) or not 0 < hfov < math.pi:
+        raise UsageError("--hfov-degrees must be in (0, 180)")
+    if not all(math.isfinite(value) for value in (near, far)) or not 0 < near < far:
+        raise UsageError("clip distances must satisfy 0 < near-clip < far-clip")
+    if not int(plugin.findtext("bitrate")) <= int(plugin.findtext("maxBitrate")) <= int(plugin.findtext("pacingBitrate")):
+        raise UsageError("encoder budgets must satisfy media-bitrate <= media-max-bitrate <= media-pacing-bitrate")
+    if len(document.encode()) > 65536:
+        raise UsageError("camera definition must be a bounded URDF document")
+    return document
+
+
+def camera_entity(args, document):
+    cr, sr = math.cos(args.roll / 2), math.sin(args.roll / 2)
+    cp, sp = math.cos(args.pitch / 2), math.sin(args.pitch / 2)
+    cy, sy = math.cos(args.yaw / 2), math.sin(args.yaw / 2)
+    return {"id": args.model_name, "role": "sensor",
+            "asset": {"id": args.model_name + "-definition", "realization": {
+                "media_type": "application/urdf+xml", "content": document}},
+            "pose": {"position": [args.x, args.y, args.z], "orientation": [
+                sr * cp * cy - cr * sp * sy, cr * sp * cy + sr * cp * sy,
+                cr * cp * sy - sr * sp * cy, cr * cp * cy + sr * sp * sy]}}
+
+
+def main(argv=None):
+    started = time.monotonic()
+    contacted = False
+    try:
+        args, share = parse_arguments(argv)
+        # Keep rendering/import diagnostics out of the JSON output and turn
+        # failures into one bounded diagnostic without a traceback.
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            document = render_camera(args, share)
+            from xgc2_gazebo_scene.placement import place_entity
+        remaining = args.timeout - (time.monotonic() - started)
+        if remaining <= 0:
+            raise UsageError("placement deadline exceeded during rendering")
+        contacted = True
+        result, instance = place_entity(args.world_endpoint, args.target_id,
+                                        camera_entity(args, document), remaining)
+        print(json.dumps({"schema": "xgc2.placement.v1", "kind": "camera", "id": args.model_name,
+                          "entity": result, "instance": instance}, separators=(",", ":"), allow_nan=False))
+        return 0
+    except Exception as error:
+        reason = " ".join(str(error).split()) or type(error).__name__
+        print(NAME + ": " + reason, file=sys.stderr)
+        return 1 if contacted else 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

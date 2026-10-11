@@ -116,6 +116,7 @@ install(TARGETS xgc_gazebo_media_camera
 )
 
 catkin_install_python(PROGRAMS
+  scripts/place_world_camera
   scripts/native_camera_entity.py
   scripts/camera_contract_publisher.py
   scripts/camera_contract_test.py
