@@ -39,6 +39,8 @@ docker run --rm \
       ros-noetic-xgc2-camera-msgs \
       ros-noetic-xgc2-gazebo-sim-worlds \
       ros-noetic-xgc2-gazebo-scene
+    scene_version="$(dpkg-query -W -f '\''${Version}'\'' ros-noetic-xgc2-gazebo-scene)"
+    dpkg --compare-versions "${scene_version}" ge 1.5.0-3
     rm -rf /workspace/work/src /workspace/work/build /workspace/work/devel /workspace/work/install-root
     mkdir -p /workspace/work/src/gazebo-camera
     rsync -a --delete /workspace/repo/ /workspace/work/src/gazebo-camera/
