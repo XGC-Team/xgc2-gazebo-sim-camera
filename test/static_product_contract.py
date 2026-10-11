@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 from pathlib import Path
 
 import yaml
@@ -29,6 +30,17 @@ docker_build = (root / ".xgc2/scripts/build_debs_in_docker.sh").read_text(
 profiles = yaml.safe_load(
     (root / "config/world_camera_profiles.yaml").read_text(encoding="utf-8")
 )
+
+# With parallel starts the session ROS master may not be up yet; roslaunch must wait for it
+# instead of starting a second master of its own.
+definition = json.loads(
+    (root / "process-definitions/gazebo-static-camera.json").read_text(encoding="utf-8")
+)
+for entry in definition["definitions"]:
+    command = entry["command"]["args"]
+    separator = command.index("--")
+    assert command[separator + 1].endswith("/roslaunch"), command[separator + 1]
+    assert command[separator + 2] == "--wait", command[separator + 2]
 
 assert profiles["schema_version"] == 1
 assert profiles["default_profile"] == "world_wide_4k30_110"

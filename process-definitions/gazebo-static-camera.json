@@ -247,6 +247,7 @@
           "0",
           "--",
           "/opt/ros/noetic/bin/roslaunch",
+          "--wait",
           "gazebo_sim_camera",
           "static_camera.launch",
           "world:=${world}",
