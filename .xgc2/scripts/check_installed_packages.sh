@@ -17,7 +17,7 @@ dpkg -s ros-noetic-foxglove-msgs ros-noetic-xgc2-camera-msgs >/dev/null
 dpkg -s libgl1 libglew2.1 libjpeg8 >/dev/null
 test "$(rospack find gazebo_sim_camera)" = "${SHARE}"
 test -x "/opt/ros/${ROS_DISTRO}/lib/gazebo_sim_camera/camera_contract_test.py"
-test -x "/opt/ros/${ROS_DISTRO}/lib/gazebo_sim_camera/native_camera_entity.py"
+test -x "/opt/ros/${ROS_DISTRO}/lib/gazebo_sim_camera/place_world_camera"
 test -f "${SHARE}/urdf/fixed_rgb_camera.urdf.xacro"
 test -f "${SHARE}/config/world_camera_profiles.yaml"
 test -f "${PLUGIN}"
@@ -31,7 +31,9 @@ grep -q 'libroscpp.so' <<<"${PLUGIN_DEPENDENCIES}"
 grep -a -q 'libnvidia-encode.so.1' "${PLUGIN}"
 grep -q 'xacro.load_yaml' "${SHARE}/urdf/fixed_rgb_camera.urdf.xacro"
 grep -q 'libxgc_gazebo_media_camera.so' "${SHARE}/urdf/fixed_rgb_camera.urdf.xacro"
-grep -q 'type="native_camera_entity.py"' "${SHARE}/launch/static_camera.launch"
+grep -q 'type="camera_contract_publisher.py"' "${SHARE}/launch/static_camera.launch"
+! grep -q 'command="xacro\|native_entity' "${SHARE}/launch/static_camera.launch"
+env -i "/opt/ros/${ROS_DISTRO}/lib/gazebo_sim_camera/place_world_camera" --help >/dev/null
 
 EXPANDED_PROFILE="$(mktemp)"
 trap 'rm -f "${EXPANDED_PROFILE}"' EXIT
@@ -44,12 +46,8 @@ grep -q '<update_rate>30.0</update_rate>' "${EXPANDED_PROFILE}"
 
 # --files only validates installed launch composition; it starts no process and
 # therefore uses allocated endpoint strings, never a readiness probe.
-CONTRACT_ARGS=(world:=/granted/prepared-world.world simulation_endpoint:=/granted/world.sock
-  target_id:=package-contract media_control_endpoint:=/granted/media.sock media_rtp_port:=26417
+CONTRACT_ARGS=(media_control_endpoint:=/granted/media.sock
   media_control_target_id:=package-contract python_executable:="${SELECTED_PYTHON}")
-for entry in static_camera intrinsic_calibration_world; do
-  roslaunch --files gazebo_sim_camera "${entry}.launch" gui:=false "${CONTRACT_ARGS[@]}" >/dev/null
-done
-roslaunch --files gazebo_sim_camera extrinsic_calibration_world.launch gui:=false \
-  vrpn_config:=/granted/vrpn.yaml "${CONTRACT_ARGS[@]}" >/dev/null
+roslaunch --files gazebo_sim_camera static_camera.launch "${CONTRACT_ARGS[@]}" >/dev/null
+roslaunch --files gazebo_sim_camera camera_ar_rviz.launch >/dev/null
 echo "Installed package check passed"

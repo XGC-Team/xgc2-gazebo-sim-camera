@@ -78,10 +78,10 @@ The camera uses:
 - frames `usb_cam_link -> usb_cam_optical_frame`.
 
 The optical-frame joint uses the REP-103 rotation
-`rpy=(-pi/2, 0, -pi/2)`. A second instance must use a distinct model name,
-source ID, RTP port, camera-link frame, and optical frame. The current shared host
-requires sensors inside one gzserver to share its binding; distinct camera paths
-in one world are an existing host restriction.
+`rpy=(-pi/2, 0, -pi/2)`. At most one independently bound world camera is
+supported per gzserver: the process-wide camera-source host refuses a second
+endpoint/target binding. This existing limit is unchanged. Separate gzserver
+processes require distinct model/source IDs, endpoints, RTP ports and frames.
 
 The native `camera-source` service uses the official XRPC 0.2.0 SDK. Unbound
 `GET /v1/describe` returns
@@ -100,210 +100,190 @@ The exact routes, revision/receipt semantics and resource/storage limits are
 specified in [source_control.md](docs/source_control.md). The old JSON-line
 socket operations have been removed.
 
-## World camera profiles
+## Placement and runtime
 
-`config/world_camera_profiles.yaml` is the canonical source for simulated
-optics, render cadence, encoder budgets, and snapshot quality. Endpoint
-identity, network ports, Gazebo pose, and TF ownership deliberately remain
-per-instance launch parameters.
-
-| Profile | Image | Horizontal FOV | H264 average / max / pacing |
-| --- | --- | --- | --- |
-| `world_wide_4k30_110` (default) | 3840×2160 at 30 fps | 110° | 24 / 36 / 72 Mbit/s |
-
-The workflow owner allocates the world and camera endpoints before starting
-the prepared native world, camera launch and consumers in parallel. The camera
-launch uses `roslaunch --wait`; entity creation and CameraInfo metadata wait off
-the TF publication path, watch the runtime socket directory and reconcile once
-per peer instance. A missing socket causes no connection polling. Failed calls
-use full jitter from 250 ms to a 30-second cap and one log summary per 10 seconds.
-The ROS publisher uses the scene package's shared master watcher, so Gazebo can
-serve source control before the master exists; a replaced master ends the bound
-Gazebo process. Source status includes the master state and identity. Consumers
-may connect late or restart without restarting the source host.
-
-Supply the allocated `simulation_endpoint`, camera-source endpoint, target grants
-and `media_rtp_port`. These are rendezvous inputs: the world and source may be
-absent at launch. Paths are accepted unchanged, including flat hashed names in
-an existing parent directory. The spawner has readiness `none` and publishes no
-service; the plugin inside gzserver serves camera source control. Select a
-complete parameter group with:
+Core allocates the world and camera rendezvous endpoints and media ports before
+starting the camera action. It starts `gazebo-static-camera` (the ROS runtime)
+and media-edge in parallel at the action start. After `await world`, it runs
+`/opt/ros/noetic/lib/gazebo_sim_camera/place_world_camera` as a finite
+`command.run` with JSON output and a 60-second outer bound. The CLI renders
+`fixed_rgb_camera.urdf.xacro` using the Python xacro module and places one
+`role: sensor` URDF entity through `xgc2_gazebo_scene.placement`. It needs no
+sourced ROS environment, `HOME`, ROS master, ROS parameters or stdin.
 
 ```bash
-roslaunch --wait gazebo_sim_camera static_camera.launch \
-  world:=/absolute/prepared-camera.world \
-  simulation_endpoint:="$SIMULATION_ENDPOINT" target_id:="$SIMULATION_TARGET_ID" \
-  media_rtp_port:="$MEDIA_RTP_PORT" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
-  python_executable:="$CAMERA_PYTHON_EXECUTABLE" camera_profile:=world_wide_4k30_110 gui:=false
-
-roslaunch --wait gazebo_sim_camera static_camera.launch \
-  world:=/absolute/prepared-camera.world \
-  simulation_endpoint:="$SIMULATION_ENDPOINT" target_id:="$SIMULATION_TARGET_ID" \
-  media_rtp_port:="$MEDIA_RTP_PORT" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
-  python_executable:="$CAMERA_PYTHON_EXECUTABLE" camera_profile:=world_wide_4k30_110 gui:=false
+/opt/ros/noetic/lib/gazebo_sim_camera/place_world_camera \
+  --world-endpoint "$SIMULATION_ENDPOINT" --target-id "$SIMULATION_TARGET_ID" \
+  --model-name yard_camera --media-source-id yard_cam \
+  --media-control-endpoint "$MEDIA_CONTROL_ENDPOINT" \
+  --media-control-target-id "$MEDIA_CONTROL_TARGET_ID" \
+  --media-rtp-port "$MEDIA_RTP_PORT" --camera-profile world_wide_4k30_110 \
+  --camera-link-frame yard_cam_link --optical-frame yard_cam_optical_frame \
+  --x -3 --y 2 --z 2 --yaw -0.3
 ```
 
-For direct developer launches, `width`, `height`, `fps`, `hfov_degrees`,
-clipping, noise, bitrate, VBV, JPEG-quality, and snapshot JPEG policy arguments are explicit
-overrides. Their default value is the sentinel `profile`; `hfov_degrees` is
-converted to radians inside the xacro contract and there is no radians-based
-alias. The managed ProcessDefinition exposes only `cameraProfile`, so
-production workflows cannot assemble an incoherent partial profile. The
-intrinsic Experiment selects the 90° field profile, whose ideal fx=640 px at
-1280 width closely reproduces the focused station camera (measured fx≈638 px).
+The shared helper watches a briefly absent world socket, performs one unbound
+held `GET /v1/describe?wait_ready_ms=...`, checks the simulation-v1 HTTP service
+and target grant, pins the discovered instance, submits one creation and waits
+once for completion. Rendering, discovery and creation share `--timeout`.
+There is no placement polling, retry, replay, deletion or replacement. A second
+placement of the same model ID fails with the world's conflict. A world restart
+ends the Session. Stopping the runtime does not remove the model.
 
-Gazebo Classic interprets `horizontal_fov` as radians, so the profile keeps FOV
-in human-readable degrees and xacro converts it. The 110° profile is an ideal
-rectilinear pinhole camera with zero distortion, not a fisheye lens model.
+Success writes exactly one stdout line:
 
-The configured frame rate is the sensor target rate. It does not by itself
-prove that Gazebo, RTP, WebRTC, and the browser sustain that cadence; effective
-frame timing must be measured end to end.
+```json
+{"schema":"xgc2.placement.v1","kind":"camera","id":"yard_camera","entity":{"entities":[{"ref":{"id":"yard_camera","generation":1}}]},"instance":"<world instance>"}
+```
 
-## Instance placement
+`entity` preserves the native result returned by the helper. Exit codes are
+0 for success, 2 for usage/validation or rendering/import failure before
+placement, and 1 for world discovery/creation failure. Failures write one
+`place_world_camera: <reason>` line to stderr without a traceback.
 
-Identity, endpoints, and placement can be changed without creating another
-optics profile:
+The complete CLI argument list is:
+
+| Argument | Default / constraint |
+| --- | --- |
+| `--world-endpoint` | Required; canonical absolute Unix socket path, at most 107 bytes |
+| `--target-id` | Required; nonempty canonical world target grant |
+| `--model-name` | `gazebo_static_camera`; bounded entity identifier |
+| `--media-control-endpoint` | Required; canonical absolute camera-source Unix socket path, at most 107 bytes |
+| `--media-control-target-id` | Required; bounded source target identifier |
+| `--media-rtp-port` | Required, no default; 1–65535 |
+| `--media-rtp-host` | `127.0.0.1`; also accepts `localhost` |
+| `--media-source-id` | `usb_cam`; bounded source identifier |
+| `--media-control-instance-id` | Empty; plugin assigns the source instance |
+| `--camera-profile` | `world_wide_4k30_110` |
+| `--camera-profiles-file` | Installed `share/gazebo_sim_camera/config/world_camera_profiles.yaml` |
+| `--media-plugin-filename` | `libxgc_gazebo_media_camera.so`; an absolute plugin path is also accepted |
+| `--camera-link-frame` | `usb_cam_link` |
+| `--optical-frame` | `usb_cam_optical_frame` |
+| `--snapshot-pose-frame-id` | `world`; declares the native capture pose domain |
+| `--width` | `profile`; explicit 16–4096 pixels |
+| `--height` | `profile`; explicit 16–2160 pixels |
+| `--fps` | `profile`; explicit 0.1–240 Hz |
+| `--hfov-degrees` | `profile`; explicit (0, 180) degrees, converted to radians |
+| `--near-clip` | `profile`; finite and positive |
+| `--far-clip` | `profile`; finite and greater than near clip |
+| `--noise-stddev` | `profile`; finite and nonnegative |
+| `--media-bitrate` | `profile`; 128000–2147483647 bits/s |
+| `--media-max-bitrate` | `profile`; at least average bitrate, at most 2147483647 bits/s |
+| `--media-pacing-bitrate` | `profile`; at least maximum bitrate, at most 2147483647 bits/s |
+| `--media-vbv-buffer-milliseconds` | `profile`; 50–2000 ms |
+| `--snapshot-jpeg-quality` | `profile`; 50–100 |
+| `--snapshot-jpeg-backend` | `auto`; `auto`, `hardware`, or `cpu` |
+| `--publish-encoded-video` | `true`; `true` or `false` |
+| `--encoded-video-topic` | `/xgc/camera/world/video_h264` |
+| `--frame-timing-topic` | `/xgc/camera/world/frame_timing` |
+| `--stream-info-topic` | `/xgc/camera/world/stream_info` |
+| `--xgc-camera-info-topic` | `/xgc/camera/world/camera_info`; embedded as the plugin CameraInfo topic |
+| `--encoded-publisher-queue-capacity` | `8`; 1–128 |
+| `--static` | `true`; `false` retains physics with link gravity disabled |
+| `--x`, `--y`, `--z` | `-4.0`, `0.0`, `1.5` metres; finite |
+| `--roll`, `--pitch`, `--yaw` | `0.0`, `0.0`, `0.0` radians; finite |
+| `--timeout` | `50` seconds; finite (0, 55] |
+| `--help` | Prints usage without importing the placement module or contacting a world |
+
+`config/world_camera_profiles.yaml` remains the canonical optics, render
+cadence, encoder and snapshot configuration. Its shipped
+`world_wide_4k30_110` profile selects 3840×2160 at 30 fps, a 110° ideal
+rectilinear pinhole with zero distortion, 24/36/72 Mbit/s average/maximum/pacing
+budgets, 500 ms VBV and JPEG quality 90. Numeric overrides default to `profile`.
+Configured cadence is a sensor target, not proof of end-to-end throughput.
+
+`static_camera.launch` now runs only the contract publisher and the per-camera
+TF nodes. It starts neither Gazebo nor placement and publishes no description
+parameter. The installed definition retains readiness `none`, no services and
+no `publishAs`. The plugin inside gzserver is the camera-source authority and
+binds the supplied endpoint with `ReclaimUnreachable`, reclaiming unreachable
+stale sockets and refusing a reachable owner.
+
+Start the matching runtime separately at the action start:
 
 ```bash
 roslaunch --wait gazebo_sim_camera static_camera.launch \
-  camera_profile:=world_wide_4k30_110 \
-  model_name:=yard_camera \
-  world:=/absolute/prepared-camera.world \
-  simulation_endpoint:="$SIMULATION_ENDPOINT" target_id:="$SIMULATION_TARGET_ID" \
-  media_source_id:=yard_cam \
-  media_rtp_port:="$MEDIA_RTP_PORT" \
+  model_name:=yard_camera camera_name:=yard_cam media_source_id:=yard_cam \
   media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" \
-  media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$CAMERA_PYTHON_EXECUTABLE" \
-  camera_link_frame:=yard_cam_link \
-  optical_frame:=yard_cam_optical_frame \
-  x:=-3 y:=2 z:=2 yaw:=-0.3
+  media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON" \
+  camera_link_frame:=yard_cam_link optical_frame:=yard_cam_optical_frame \
+  camera_profile:=world_wide_4k30_110 x:=-3 y:=2 z:=2 yaw:=-0.3
 ```
 
-Changing a profile requires the managed camera process to stop, delete, and
-respawn its Gazebo model. Profiles are not a hot dynamic-reconfigure interface.
+Shared runtime/model inputs (profile file, profile, dimensions/FOV overrides,
+source ID, link/optical frames and truth pose) must match. The publisher alone
+uses `camera_name`, `intrinsic_file`, `parent_frame`, `mode`, `publish_truth_tf`,
+`gt_camera_link_frame`, `gt_optical_frame`, `calibration_root`,
+`resolved_extrinsic_json`, `frame_roles_json`, `publish_xgc_contract`,
+`xgc_transform_topic`, `use_sim_time` and `python_executable`. These are not
+placement options. Pose stays available in the direct runtime launch because it also feeds TF;
+it does not create or move a model. The managed definition removes raw pose
+parameters as well as world/plugin/RTP settings. Its existing extrinsic wrapper
+now initializes runtime TF only; placement receives its pose explicitly. For a
+nondefault authored placement, direct launch callers must supply the same pose.
+The managed runtime has no path to infer that authored pose from the CLI; its
+TF uses the launch defaults unless file/resolved extrinsic initialization is
+selected.
 
-## TF ownership modes
+The publisher starts before the source exists. Its existing off-thread
+`CameraPeer` watches the source directory, applies CameraInfo metadata once
+per source instance and reconciles lost replies. TF publication remains
+available while the source is absent. The plugin's shared scene master watcher
+lets native source control work before ROS appears; a replaced master ends the
+bound Gazebo process. Consumers can join late or restart independently.
 
-- `mode:=truth publish_truth_tf:=true` publishes the exact Gazebo pose as
-  `map -> <camera_link> -> <optical_frame>`.
-- `mode:=calibration` publishes no camera TF. A calibration result can own the
-  official transform without a second authority.
-- `mode:=validation` publishes truth only on the separate
-  `<camera_link>_gt -> <optical_frame>_gt` chain.
+## TF and calibration
 
-## Calibration scenes and camera movement
+- `mode:=truth publish_truth_tf:=true` publishes the supplied truth pose under
+  `parent_frame -> camera_link_frame -> optical_frame` on ROS TF.
+- `mode:=calibration` adds no truth TF nodes.
+- `mode:=validation` publishes truth on the separate `*_gt` chain.
 
-The intrinsic and extrinsic launch files pass the selected camera profile
-through the same `static_camera.launch` workflow:
+The XGC contract transform topic remains the estimated camera chain in all
+modes. Explicit intrinsic selection and frozen extrinsic application remain
+owned by the runtime publisher. Applying estimates preserves native optics and
+capture truth. Use `--static false` when a calibration helper will move the
+camera through the world's simulation-v1 operations.
 
-```bash
-roslaunch --wait gazebo_sim_camera intrinsic_calibration_world.launch \
-  world:=/absolute/prepared-camera.world \
-  simulation_endpoint:="$SIMULATION_ENDPOINT" target_id:="$SIMULATION_TARGET_ID" \
-  media_rtp_port:="$MEDIA_RTP_PORT" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
-  python_executable:="$CAMERA_PYTHON_EXECUTABLE" camera_profile:=world_wide_4k30_110 gui:=false
+The combined intrinsic/extrinsic world launches, camera entity lifecycle node,
+keyboard teleop, intrinsic sweep and combined Gazebo shutdown script were
+removed. Core owns world startup and placement; the calibration product owns
+interactive movement and capture. Existing calibration world/model assets
+remain with the scenes product. `camera_ar_rviz.launch` is a view-only RViz
+launch for an already running camera.
 
-roslaunch --wait gazebo_sim_camera extrinsic_calibration_world.launch \
-  camera_profile:=world_wide_4k30_110 \
-  world:=/absolute/prepared-extrinsic.world \
-  simulation_endpoint:="$SIMULATION_ENDPOINT" target_id:="$SIMULATION_TARGET_ID" \
-  vrpn_config:=/absolute/extrinsic_markers_vrpn.yaml \
-  media_rtp_port:="$MEDIA_RTP_PORT" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
-  python_executable:="$CAMERA_PYTHON_EXECUTABLE" mode:=calibration publish_truth_tf:=false
-```
-
-The intrinsic scene composes the field-matched
-`model://aprilgrid_6x6_tag36h11_88mm`: IDs 0–35, 88 mm tags and 26.4 mm gaps,
-generated from Kalibr's official AprilGrid exporter. The extrinsic scene
-composes the six `model://cal_marker_*` assets and can start the shared VRPN
-source through the explicit native_world launcher vrpn_config. The prepared
-world must declare required_component vrpn. Optional start_marker_data_client
-exports only the six calibration markers as ROS algorithm input; Adapter owns
-canonical vehicle localization and PX4 vision. The intrinsic launch spawns the camera with `static:=false` and gravity
-disabled, allowing simulation-v1 state operations and the keyboard teleop to move it.
-The standalone launch defaults to `static:=true`.
-
-This is a separate world from the retained 8×6 checkerboard scene. Use
-`camera_calibration_intrinsic_aprilgrid_6x6` for the station's field-matched
-experiment and `camera_calibration_intrinsic` when explicitly testing the older
-checkerboard target.
-
-Keyboard controls use a drone Mode 2 layout:
-
-```text
-W / S          altitude up / down
-A / D          yaw left / right
-Arrow keys     forward-back / strafe
-Q / E          pitch
-Z / C          roll
-+ / -          movement step
-Space          restore launch pose
-H              show controls
-Esc            stop keyboard control
-```
-
-Set `keyboard_teleop:=false` if another calibration controller owns the camera
-pose.
-
-## Managed process
-
-The XGC2 central process catalog, not this product, owns ProcessDefinition
-`gazebo-static-camera`. It exposes `cameraProfile` as an enum synchronized with
-the checked-in YAML. Model/frame identity, source ID, pose, and TF mode remain
-process parameters. Core supplies the required allocated RTP port and fixed
-world/source socket paths. The spawner has readiness `none` and advertises no
-service. The plugin reports its own readiness through unbound `GET /v1/describe`;
-native source membership and applied receipts describe each sensor's lifecycle. This
-Debian package does not install files under `/usr/share/xgc2/process-definitions`.
-
-## Test and package
+## Tests and packaging
 
 ```bash
 source /opt/ros/noetic/setup.bash
-python3 test/test_world_camera_profiles.py
-python3 test/static_product_contract.py
-.xgc2/scripts/check_package_compliance.sh
-
-catkin_make run_tests_gazebo_sim_camera
+nice -n 19 python3 test/test_place_world_camera.py
+nice -n 19 python3 test/test_world_camera_profiles.py
+nice -n 19 python3 test/static_product_contract.py
+nice -n 19 bash .xgc2/scripts/check_package_compliance.sh
+catkin_make -j2 run_tests_gazebo_sim_camera
 catkin_test_results
 ```
 
-The camera calibration product owns calibration sessions, saved candidates and
-their UI. This product supplies native camera capture, camera movement and
-revision-fenced calibration metadata application. Applying estimates publishes
-CameraInfo while preserving native optical intrinsics and capture truth.
+The CLI tests inject a fake shared placement module, test validation and JSON
+output, and compare six rendered URDFs to base-commit `roslaunch --dump-params`
+references after XML normalization. They cover profiles, static/dynamic
+models, encoded video on/off, endpoints, RTP ports, frame/topic overrides and
+encoder/snapshot options. Publisher transport tests retain source-late/source-
+restart and metadata reconciliation cases. The C++ source-control tests retain
+stale socket reclaim and live owner refusal.
 
-The profile unit test validates schema bounds and expands every named profile
-through xacro. While the source is inactive, the Gazebo contract first calls
-`describe` and validates the actual source identity, H264/RTP contract and
-loopback endpoint, dimensions, frame rate, frame ID, and capabilities. It then
-requests both a same-frame JPEG+RGB capture and a fresh JPEG-only transaction;
-it validates dimensions, increasing source timestamps, backend/readback
-diagnostics, JPEG/RGB payloads, pinhole intrinsics, render pose, pose-frame
-identity, and TF without requiring NVENC video encoding in the test.
-The live contract (`test/static_camera_contract.test`) starts Gazebo on a
-prepared world and needs the world's simulation service, so it is not part of
-the packaging build. The multi-architecture Docker build runs the unit tests,
-the profile tests and the static product contract through Xvfb with Mesa
-software rendering (valid on an arm64 runner without a GPU); the build fetches
-the released Python SDK wheel and verifies its checksum. Hardware NVENC remains
-a target integration check.
+The live ROS contracts (`test/static_camera_contract.test` and the hardware
+variant) require a camera already placed by Core or a station fixture. Supply
+their source endpoint, target, RTP allocation and interpreter; they start only
+the matching runtime and assertions. The fixture owns world startup, finite
+placement and complete teardown. The hardware variant additionally requires
+its model to use `--snapshot-jpeg-backend hardware` and an available backend.
+Live Gazebo/rendering/NVENC checks are separate from these local unit tests.
 
-After building and sourcing a Catkin workspace on a station with a prepared
-world, the Gazebo lifecycle regression starts and stops the full contract twice
-and rejects an otherwise easy-to-miss `gzserver` exit crash. The launch
-arguments of the contract have no defaults:
-
-```bash
-DISPLAY=:1 .xgc2/scripts/check_gazebo_shutdown.sh 2 \
-  world:="$SIMULATION_WORLD_FILE" simulation_endpoint:="$SIMULATION_ENDPOINT" \
-  target_id:="$SIMULATION_TARGET_ID" media_rtp_port:="$MEDIA_RTP_PORT" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" \
-  media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON"
-```
-
-The Debian package owns the ROS package share and executable directories plus
-`/opt/ros/noetic/lib/libxgc_gazebo_media_camera.so`. It declares the plugin's
-linked OpenGL, GLEW, and JPEG runtime libraries. `libnvidia-encode.so.1` is
-loaded dynamically and must come from the target's matching NVIDIA driver
-installation; the product does not pin or install a particular driver series.
+The Debian package installs the process definition under
+`/usr/share/xgc2/process-definitions`, the ROS package share/executable
+directories, the placement CLI with mode 0755, and
+`/opt/ros/noetic/lib/libxgc_gazebo_media_camera.so`. OpenGL, GLEW and JPEG
+runtime dependencies remain explicit. `libnvidia-encode.so.1` is dynamically
+loaded from the target's matching NVIDIA driver; no driver or CUDA image is
+installed by the main plugin.

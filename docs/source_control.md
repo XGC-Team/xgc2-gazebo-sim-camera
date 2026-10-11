@@ -128,23 +128,50 @@ Capture geometry is at most 4096×2160, JPEG 32 MiB, RGB 26,542,080 bytes and th
 capture budget four seconds. Native render callbacks receive typed records;
 JSON and HTTP run on the one SDK IO executor.
 
-Source membership follows actual native sensor lifecycle. Create/remove/reset
-belongs to the existing simulation-v1 world host. Camera helpers take the opaque
-simulation_endpoint and target_id, watch the endpoint's existing parent directory,
-and discover the current world through one unbound held describe. The discovered
-ServiceRef supplies target and instance fencing. The spawner replays the same
-authored camera entity once per world instance, including after restart, without
-blocking its initialization on the world. Its process readiness is none, with no
-services or publishAs; the plugin inside gzserver is the camera-source authority.
-Camera launch also requires media_control_endpoint, media_control_target_id, the
-inventory's allocated media_rtp_port and a selected python_executable with Python >=3.8,
-the official SDK wheel and matching ROS dependencies. It does not use XRPC to
-launch processes. The plugin binds its allocated camera path with XRPC
-ReclaimUnreachable: a stale unreachable socket is reclaimed, while a live owner
-makes binding fail. Paths are accepted as given and require only an existing
-parent; the product does not derive service names or parse hashed filenames.
-Source effects remain ephemeral; captures are retained by
-media/archive owners rather than written by this plugin.
+Source membership follows actual native sensor lifecycle. Core starts the
+camera ROS runtime and media-edge at the camera action start in parallel, then
+awaits the world before invoking the finite
+`/opt/ros/noetic/lib/gazebo_sim_camera/place_world_camera` CLI. The CLI renders
+one camera URDF and calls the shared `xgc2_gazebo_scene.placement.place_entity`
+helper once. One unbound held world describe validates the target and pins the
+instance before one entity creation and completion wait. The CLI never starts
+ROS, reads stdin, polls, replays, deletes or replaces. Its whole-run deadline is
+50 seconds by default (at most 55), below Core's 60-second command bound.
+
+The [complete placement argument/default table](../README.md#placement-and-runtime)
+covers world/source endpoint and target grants, model/source identity, allocated
+RTP port/host, profile and profile file, image/FOV/clip/noise overrides, encoder
+budgets, snapshot JPEG quality/backend, encoded-video publication/topics/queue,
+link and optical frames, snapshot pose domain, static/dynamic behavior, pose,
+timeout and help. Plugin values travel in the model and never depend on a
+launch's ROS parameters. `--media-rtp-port` is required with no default (1–65535).
+`--help` requires neither ROS initialization nor an importable placement module.
+Success is one JSON stdout line with schema `xgc2.placement.v1`, kind `camera`,
+model ID, the unchanged native entity result and world instance. Exit codes are
+0 success, 2 validation/rendering/import failure before placement, and 1 world
+failure. Failure is one `place_world_camera: <reason>` stderr line. Repeating an
+entity ID fails with a conflict naming that ID.
+
+`static_camera.launch` and `gazebo-static-camera` now supply the long-running
+contract publisher and TF nodes only. Readiness remains `none`; no service or
+`publishAs` is advertised. They accept the source endpoint/target and runtime
+calibration/frame/TF configuration and can start before the camera source
+exists. Existing source `CameraPeer` discovery and revision reconciliation keep
+metadata application off the TF publication path. The direct launch retains
+pose inputs for its TF nodes; the managed definition removes raw pose inputs.
+A nondefault authored placement therefore needs a matching direct runtime pose
+or file/resolved TF initialization; the managed runtime cannot infer the CLI
+pose. Camera name, intrinsic file, parent frame, mode and truth TF policy are
+runtime-only values.
+
+The plugin binds its allocated camera path with XRPC `ReclaimUnreachable`: an
+unreachable stale socket is reclaimed, while a live owner makes binding fail.
+At most one independently bound world camera is supported per gzserver,
+because its camera-source host is process-wide. This limit is unchanged.
+Paths are accepted as given, including opaque hashed filenames, and require an
+existing parent. Stopping the ROS runtime does not remove the camera; world
+restart ends the Session. Source effects remain ephemeral; captures are
+retained by media/archive owners rather than written by this plugin.
 
 The engine compilation unit stays C++17; the SDK facade is C++20. Existing
 isolated evidence covers fresh native JPEG/RGB and actual ROS CameraInfo

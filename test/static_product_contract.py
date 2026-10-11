@@ -9,12 +9,7 @@ import yaml
 root = Path(__file__).resolve().parents[1]
 xacro = (root / "urdf/fixed_rgb_camera.urdf.xacro").read_text(encoding="utf-8")
 launch = (root / "launch/static_camera.launch").read_text(encoding="utf-8")
-intrinsic = (root / "launch/intrinsic_calibration_world.launch").read_text(
-    encoding="utf-8"
-)
-extrinsic = (root / "launch/extrinsic_calibration_world.launch").read_text(
-    encoding="utf-8"
-)
+cli = (root / "scripts/place_world_camera").read_text(encoding="utf-8")
 camera_contract = (root / "scripts/camera_contract_publisher.py").read_text(
     encoding="utf-8"
 )
@@ -43,30 +38,40 @@ for entry in definition["definitions"]:
     properties = entry["parameters"]["properties"]
     required = entry["parameters"]["required"]
     assert not any("serviceref" in name.lower() for name in properties)
-    for parameter in ("simulationEndpoint", "mediaControlEndpoint"):
-        assert properties[parameter]["type"] == "string"
-        assert properties[parameter]["fixedOnly"] is True
-        assert parameter in required
-    assert "mediaControlTargetId" in required and "targetId" in required
-    assert properties["mediaRtpPort"]["type"] == "integer"
-    assert properties["mediaRtpPort"]["minimum"] == 1
-    assert properties["mediaRtpPort"]["maximum"] == 65535
-    assert "default" not in properties["mediaRtpPort"]
-    assert "mediaRtpPort" in required
-    assert properties["mediaRtpHost"]["default"] == "127.0.0.1"
+    assert properties["mediaControlEndpoint"]["fixedOnly"] is True
+    assert {"mediaControlEndpoint", "mediaControlTargetId", "pythonExecutable"} <= set(required)
+    for removed in ("world", "simulationEndpoint", "targetId", "startGazebo", "gazeboMasterPort",
+                    "cameraStatic", "mediaRtpPort", "mediaRtpHost", "snapshotJpegBackend", "gui",
+                    "x", "y", "z", "roll", "pitch", "yaw"):
+        assert removed not in properties
     command = entry["command"]["args"]
     separator = command.index("--")
     assert command[separator + 1].endswith("/roslaunch"), command[separator + 1]
     assert command[separator + 2] == "--wait", command[separator + 2]
-    assert "simulation_endpoint:=${simulationEndpoint}" in command
-    assert "media_rtp_port:=${mediaRtpPort}" in command
-    assert "media_rtp_host:=${mediaRtpHost}" in command
+    assert not any(arg.startswith(("world:=", "simulation_endpoint:=", "media_rtp_port:=")) for arg in command)
+    assert not any(arg.split(":=", 1)[0] in {"x", "y", "z", "roll", "pitch", "yaw"} for arg in command)
 
-for document in (launch, intrinsic, extrinsic):
-    arguments = {arg.get("name"): arg for arg in ET.fromstring(document).findall("arg")}
-    assert "simulation_service_ref_json" not in arguments
-    assert "default" not in arguments["simulation_endpoint"].attrib
-    assert "default" not in arguments["media_rtp_port"].attrib
+launch_root = ET.fromstring(launch)
+arguments = {arg.get("name"): arg for arg in launch_root.findall("arg")}
+for removed in ("world", "simulation_endpoint", "target_id", "media_rtp_port", "start_gazebo", "static",
+                "media_bitrate", "snapshot_jpeg_backend", "publish_encoded_video"):
+    assert removed not in arguments
+# The direct launch still needs these inputs for its existing TF nodes.
+assert {"x", "y", "z", "roll", "pitch", "yaw"} <= set(arguments)
+assert not launch_root.findall("include")
+assert not any(param.get("command") for param in launch_root.findall("param"))
+assert all(node.get("type") in ("camera_contract_publisher.py", "static_transform_publisher")
+           for node in launch_root.iter("node"))
+for removed in ("scripts/native_camera_entity.py", "scripts/keyboard_camera_teleop.py",
+                "scripts/drive_intrinsic_calibration.py", "launch/intrinsic_calibration_world.launch",
+                "launch/extrinsic_calibration_world.launch", "test/test_keyboard_camera_teleop.py",
+                "test/test_intrinsic_sweep.py", ".xgc2/scripts/check_gazebo_shutdown.sh"):
+    assert not (root / removed).exists()
+assert "scripts/place_world_camera" in cmake
+assert "test/test_place_world_camera.py" in cmake
+assert "from xgc2_gazebo_scene.placement import place_entity" in cli
+assert '"kind": "camera"' in cli and '"schema": "xgc2.placement.v1"' in cli
+assert 'ReclaimUnreachable' in control_host
 assert 'sdf->HasElement("rtpPort")' in media_plugin
 assert 'SDFValue<int>(sdf, "rtpPort",' not in media_plugin
 
@@ -134,33 +139,10 @@ assert "libgazebo_ros_camera.so" not in xacro
 
 assert 'name="camera_profile" default="world_wide_4k30_110"' in launch
 assert "config/world_camera_profiles.yaml" in launch
-assert 'command="xacro ' in launch
-assert "$(find xacro)/xacro" not in launch
-for argument in (
-    "width",
-    "height",
-    "fps",
-    "near_clip",
-    "far_clip",
-    "noise_stddev",
-    "media_bitrate",
-    "media_max_bitrate",
-    "media_pacing_bitrate",
-    "media_vbv_buffer_milliseconds",
-    "snapshot_jpeg_quality",
-):
-    assert f'<arg name="{argument}" default="profile"/>' in launch
-assert '<arg name="hfov_degrees" default="profile"/>' in launch
-assert "hfov_degrees:=$(arg hfov_degrees)" in launch
+assert 'command="xacro ' not in launch
+for argument in ("width", "height", "hfov_degrees"):
+    assert arguments[argument].get("default") == "profile"
 assert '<arg name="hfov"' not in launch
-assert "camera_profile:=$(arg camera_profile)" in launch
-assert "camera_profiles_file:=$(arg camera_profiles_file)" in launch
-assert '<arg name="media_plugin_filename" default="libxgc_gazebo_media_camera.so"/>' in launch
-assert "media_plugin_filename:=$(arg media_plugin_filename)" in launch
-assert "static:=$(arg static)" in launch
-assert '<arg name="snapshot_pose_frame_id" default="world"/>' in launch
-assert "snapshot_pose_frame_id:=$(arg snapshot_pose_frame_id)" in launch
-assert '<arg name="publish_encoded_video" default="true"/>' in launch
 assert "enable_continuous_jpeg_preview" not in launch
 assert "xgc_compressed_image_topic" not in launch
 assert "output_compressed_image_topic" not in launch
@@ -169,28 +151,11 @@ assert 'name="xgc_optical_frame"' not in launch
 assert '<param name="camera_link_frame" value="$(arg camera_link_frame)"/>' in launch
 assert '<param name="optical_frame" value="$(arg optical_frame)"/>' in launch
 
-assert 'name="camera_profile" default="world_wide_4k30_110"' in intrinsic
-assert 'name="camera_profile" default="world_wide_4k30_110"' in extrinsic
-for calibration_launch in (intrinsic, extrinsic):
-    assert '<arg name="hfov"' not in calibration_launch
-    assert '<arg name="camera_profile" value="$(arg camera_profile)"/>' in calibration_launch
-    assert '<arg name="camera_profiles_file" value="$(arg camera_profiles_file)"/>' in calibration_launch
-    assert '<arg name="publish_encoded_video" default="true"/>' in calibration_launch
-    assert '<arg name="publish_encoded_video" value="$(arg publish_encoded_video)"/>' in calibration_launch
-    assert "enable_continuous_jpeg_preview" not in calibration_launch
-
-assert '<arg name="static" value="$(arg camera_static)"/>' in intrinsic
-assert "--gui-client-plugin libKeyboardGUIPlugin.so" in launch
-assert 'type="keyboard_camera_teleop.py"' in intrinsic
-
 assert "arg('mode') == 'truth'" in launch
 assert "arg('mode') == 'validation'" in launch
 assert "gt_camera_link_frame" in launch and "gt_optical_frame" in launch
-assert 'type="native_camera_entity.py"' in launch
-assert "scripts/native_camera_entity.py" in cmake
 assert "camera_source_control_test" in cmake
 assert "spawn_model" not in launch
-assert "media_control_endpoint:=$(arg media_control_endpoint)" in launch
 assert 'name="camera_profile" value="$(arg camera_profile)"' in launch
 assert '<arg name="camera_name" default="usb_cam"/>' in launch
 assert 'name="camera_name" value="$(arg camera_name)"' in launch
@@ -211,12 +176,10 @@ assert "IssueSnapshotPBOReadback" in media_plugin
 assert "SnapshotEncoderLoop" in media_plugin
 assert '<xacro:arg name="snapshot_jpeg_backend" default="auto"/>' in xacro
 assert '<snapshotJpegBackend>$(arg snapshot_jpeg_backend)</snapshotJpegBackend>' in xacro
-assert '<arg name="snapshot_jpeg_backend" default="auto"/>' in launch
-assert "snapshot_jpeg_backend:=$(arg snapshot_jpeg_backend)" in launch
 hardware_contract = (root / "test/static_camera_hardware_contract.test").read_text(
     encoding="utf-8"
 )
-assert '<arg name="snapshot_jpeg_backend" value="hardware"/>' in hardware_contract
+assert '<arg name="snapshot_jpeg_backend"' not in hardware_contract
 assert '<param name="expected_jpeg_backend" value="nvjpeg-cuda"/>' in hardware_contract
 assert '<param name="expect_jpeg_fallback" value="false"/>' in hardware_contract
 assert "CompressedImage" not in camera_contract
@@ -280,17 +243,15 @@ assert "configuration.rcParams.zeroReorderDelay = 1" in ensure_encoder
 assert "encodedFrameIndex_ = 0" not in ensure_encoder
 assert "transport clock, not encoder-local state" in ensure_encoder
 
-source_build = docker_build.index("    catkin_make\n")
+source_build = docker_build.index("    catkin_make -j2\n")
 source_overlay = docker_build.index(
     "    source /workspace/work/devel/setup.bash\n"
 )
 run_contract = docker_build.index(
-    "      catkin_make run_tests_gazebo_sim_camera\n"
+    "      catkin_make -j2 run_tests_gazebo_sim_camera\n"
 )
 assert source_build < source_overlay < run_contract
 assert "LIBGL_ALWAYS_SOFTWARE=1 xvfb-run" in docker_build
 
-assert '<arg name="vrpn_use_server_time" default="true"/>' in extrinsic
-assert '<arg name="use_server_time" value="$(arg vrpn_use_server_time)"/>' in extrinsic
 
 print("Static product contracts passed")

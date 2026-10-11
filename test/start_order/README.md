@@ -26,8 +26,9 @@ stopped and joined by its owner.
 
 Fast tests skip the long cases by default. A long test cell enables them with
 `XGC_LONG_TESTS=1` and runs `test_peer_start_order.py`,
-`test_ros_master_start_order.py`, `test_keyboard_camera_teleop.py` and the FS150 worktree's
-`test_mavros_start_order.py`. Set `XGC_MASTER_FIXTURE` to the built
+`test_ros_master_start_order.py`. World discovery/replay and keyboard cases
+were removed with the finite placement split; the remaining camera peer tests
+cover only the contract publisher's source connection. Set `XGC_MASTER_FIXTURE` to the built
 `ros_master_fixture` executable for the master test. Each outage lasts 60
 seconds of wall time and checks process CPU below 1.2 seconds, bounded attempts
 and logs, stable thread and descriptor counts, recovery and a single replay.

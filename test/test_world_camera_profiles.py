@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import importlib.machinery
+import importlib.util
 import math
 import subprocess
 import unittest
@@ -18,23 +20,21 @@ def load_profiles():
     return yaml.safe_load(PROFILE_PATH.read_text(encoding="utf-8"))
 
 
+loader = importlib.machinery.SourceFileLoader("profile_camera_cli", str(ROOT / "scripts/place_world_camera"))
+spec = importlib.util.spec_from_loader(loader.name, loader)
+camera_cli = importlib.util.module_from_spec(spec)
+loader.exec_module(camera_cli)
+
+
 def expand_profile(profile_name, *mappings, rtp_port=26417):
-    command = [
-        "/opt/ros/noetic/bin/xacro",
-        str(XACRO_PATH),
-        "camera_profile:={}".format(profile_name),
-        "media_rtp_port:={}".format(rtp_port),
-        *mappings,
-    ]
-    completed = subprocess.run(
-        command,
-        cwd=str(ROOT),
-        check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    return ET.fromstring(completed.stdout)
+    arguments = ["--world-endpoint", "/granted/world.sock", "--target-id", "profile-test",
+                 "--media-control-endpoint", "/granted/camera.sock", "--media-control-target-id", "profile-test",
+                 "--camera-profile", profile_name, "--media-rtp-port", str(rtp_port)]
+    for mapping in mappings:
+        name, value = mapping.split(":=", 1)
+        arguments.extend(["--" + name.replace("_", "-"), value])
+    args, share = camera_cli.parse_arguments(arguments)
+    return ET.fromstring(camera_cli.render_camera(args, share))
 
 
 def sensor_from(robot):

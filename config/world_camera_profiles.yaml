@@ -3,7 +3,7 @@ default_profile: world_wide_4k30_110
 
 # Profiles describe only the simulated optics, render cadence, encoder budget,
 # and explicit calibration snapshot quality. Runtime identity, RTP/control
-# endpoints, Gazebo pose, and TF ownership remain per-instance launch inputs.
+# endpoints, Gazebo pose, and TF ownership remain per-instance placement and runtime inputs.
 profiles:
   world_wide_4k30_110:
     image:

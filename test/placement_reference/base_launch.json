@@ -1,0 +1,101 @@
+{
+  "base_commit": "14bfb285dbcb371534234bab5640a45db78d7ada",
+  "command": "roslaunch --dump-params <BASE>/launch/static_camera.launch <arguments>",
+  "cases": [
+    {
+      "name": "default_static_encoded",
+      "arguments": {
+        "media_control_endpoint": "/granted/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.sock",
+        "media_control_target_id": "fixture",
+        "media_rtp_port": "26417"
+      },
+      "normalized_urdf": "<robot name=\"gazebo_static_camera\"><link name=\"usb_cam_link\"><inertial><mass value=\"0.2\" /><origin xyz=\"0 0 0\" /><inertia ixx=\"0.0004\" ixy=\"0\" ixz=\"0\" iyy=\"0.0004\" iyz=\"0\" izz=\"0.0004\" /></inertial><visual><geometry><box size=\"0.06 0.14 0.14\" /></geometry><material name=\"camera_black\"><color rgba=\"0.02 0.02 0.02 1\" /></material></visual><visual><origin rpy=\"0 1.5707963267948966 0\" xyz=\"0.0475 0 0\" /><geometry><cylinder length=\"0.035\" radius=\"0.04\" /></geometry><material name=\"camera_black\" /></visual><collision><geometry><box size=\"0.06 0.14 0.14\" /></geometry></collision><collision><origin rpy=\"0 1.5707963267948966 0\" xyz=\"0.0475 0 0\" /><geometry><cylinder length=\"0.035\" radius=\"0.04\" /></geometry></collision></link><link name=\"usb_cam_optical_frame\" /><joint name=\"camera_link_to_optical\" type=\"fixed\"><parent link=\"usb_cam_link\" /><child link=\"usb_cam_optical_frame\" /><origin rpy=\"-1.5707963267948966 0 -1.5707963267948966\" xyz=\"0.067 0 0\" /></joint><gazebo><static>true</static></gazebo><gazebo reference=\"usb_cam_link\"><material>Gazebo/Black</material><sensor name=\"rgb_camera\" type=\"camera\"><pose>0.067 0 0 0 0 0</pose><always_on>true</always_on><update_rate>30.0</update_rate><visualize>false</visualize><camera><horizontal_fov>1.9198621771937625</horizontal_fov><image><width>3840</width><height>2160</height><format>R8G8B8</format></image><clip><near>0.1</near><far>100.0</far></clip><noise><type>gaussian</type><mean>0.0</mean><stddev>0.0</stddev></noise></camera><plugin filename=\"libxgc_gazebo_media_camera.so\" name=\"xgc_media_camera\"><sourceId>usb_cam</sourceId><frameId>usb_cam_optical_frame</frameId><rtpHost>127.0.0.1</rtpHost><rtpPort>26417</rtpPort><controlEndpoint>/granted/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.sock</controlEndpoint><controlTargetId>fixture</controlTargetId><controlInstanceId /><snapshotPoseFrameId>world</snapshotPoseFrameId><rosPublishEnabled>true</rosPublishEnabled><rosVideoTopic>/xgc/camera/world/video_h264</rosVideoTopic><rosFrameTimingTopic>/xgc/camera/world/frame_timing</rosFrameTimingTopic><rosCameraInfoTopic>/xgc/camera/world/camera_info</rosCameraInfoTopic><rosStreamInfoTopic>/xgc/camera/world/stream_info</rosStreamInfoTopic><rosPublisherQueueCapacity>8</rosPublisherQueueCapacity><bitrate>24000000</bitrate><maxBitrate>36000000</maxBitrate><pacingBitrate>72000000</pacingBitrate><vbvBufferMilliseconds>500</vbvBufferMilliseconds><jpegQuality>90</jpegQuality><snapshotJpegBackend>auto</snapshotJpegBackend></plugin></sensor></gazebo></robot>"
+    },
+    {
+      "name": "dynamic_unencoded",
+      "arguments": {
+        "media_control_endpoint": "/granted/cccccccccccccccccccccccccccccccc.sock",
+        "media_control_target_id": "fixture",
+        "media_rtp_port": "26419",
+        "static": "false",
+        "publish_encoded_video": "false",
+        "x": "1",
+        "y": "-2",
+        "z": "3",
+        "roll": "0.2",
+        "pitch": "-0.4",
+        "yaw": "0.6"
+      },
+      "normalized_urdf": "<robot name=\"gazebo_static_camera\"><link name=\"usb_cam_link\"><inertial><mass value=\"0.2\" /><origin xyz=\"0 0 0\" /><inertia ixx=\"0.0004\" ixy=\"0\" ixz=\"0\" iyy=\"0.0004\" iyz=\"0\" izz=\"0.0004\" /></inertial><visual><geometry><box size=\"0.06 0.14 0.14\" /></geometry><material name=\"camera_black\"><color rgba=\"0.02 0.02 0.02 1\" /></material></visual><visual><origin rpy=\"0 1.5707963267948966 0\" xyz=\"0.0475 0 0\" /><geometry><cylinder length=\"0.035\" radius=\"0.04\" /></geometry><material name=\"camera_black\" /></visual><collision><geometry><box size=\"0.06 0.14 0.14\" /></geometry></collision><collision><origin rpy=\"0 1.5707963267948966 0\" xyz=\"0.0475 0 0\" /><geometry><cylinder length=\"0.035\" radius=\"0.04\" /></geometry></collision></link><link name=\"usb_cam_optical_frame\" /><joint name=\"camera_link_to_optical\" type=\"fixed\"><parent link=\"usb_cam_link\" /><child link=\"usb_cam_optical_frame\" /><origin rpy=\"-1.5707963267948966 0 -1.5707963267948966\" xyz=\"0.067 0 0\" /></joint><gazebo reference=\"usb_cam_link\"><gravity>false</gravity></gazebo><gazebo reference=\"usb_cam_link\"><material>Gazebo/Black</material><sensor name=\"rgb_camera\" type=\"camera\"><pose>0.067 0 0 0 0 0</pose><always_on>true</always_on><update_rate>30.0</update_rate><visualize>false</visualize><camera><horizontal_fov>1.9198621771937625</horizontal_fov><image><width>3840</width><height>2160</height><format>R8G8B8</format></image><clip><near>0.1</near><far>100.0</far></clip><noise><type>gaussian</type><mean>0.0</mean><stddev>0.0</stddev></noise></camera><plugin filename=\"libxgc_gazebo_media_camera.so\" name=\"xgc_media_camera\"><sourceId>usb_cam</sourceId><frameId>usb_cam_optical_frame</frameId><rtpHost>127.0.0.1</rtpHost><rtpPort>26419</rtpPort><controlEndpoint>/granted/cccccccccccccccccccccccccccccccc.sock</controlEndpoint><controlTargetId>fixture</controlTargetId><controlInstanceId /><snapshotPoseFrameId>world</snapshotPoseFrameId><rosPublishEnabled>false</rosPublishEnabled><rosVideoTopic>/xgc/camera/world/video_h264</rosVideoTopic><rosFrameTimingTopic>/xgc/camera/world/frame_timing</rosFrameTimingTopic><rosCameraInfoTopic>/xgc/camera/world/camera_info</rosCameraInfoTopic><rosStreamInfoTopic>/xgc/camera/world/stream_info</rosStreamInfoTopic><rosPublisherQueueCapacity>8</rosPublisherQueueCapacity><bitrate>24000000</bitrate><maxBitrate>36000000</maxBitrate><pacingBitrate>72000000</pacingBitrate><vbvBufferMilliseconds>500</vbvBufferMilliseconds><jpegQuality>90</jpegQuality><snapshotJpegBackend>auto</snapshotJpegBackend></plugin></sensor></gazebo></robot>"
+    },
+    {
+      "name": "narrow_profile",
+      "arguments": {
+        "media_control_endpoint": "/granted/dddddddddddddddddddddddddddddddd.sock",
+        "media_control_target_id": "fixture",
+        "media_rtp_port": "30001",
+        "camera_profile": "fixture_narrow",
+        "camera_profiles_file": "@profiles@",
+        "snapshot_jpeg_backend": "cpu"
+      },
+      "normalized_urdf": "<robot name=\"gazebo_static_camera\"><link name=\"usb_cam_link\"><inertial><mass value=\"0.2\" /><origin xyz=\"0 0 0\" /><inertia ixx=\"0.0004\" ixy=\"0\" ixz=\"0\" iyy=\"0.0004\" iyz=\"0\" izz=\"0.0004\" /></inertial><visual><geometry><box size=\"0.06 0.14 0.14\" /></geometry><material name=\"camera_black\"><color rgba=\"0.02 0.02 0.02 1\" /></material></visual><visual><origin rpy=\"0 1.5707963267948966 0\" xyz=\"0.0475 0 0\" /><geometry><cylinder length=\"0.035\" radius=\"0.04\" /></geometry><material name=\"camera_black\" /></visual><collision><geometry><box size=\"0.06 0.14 0.14\" /></geometry></collision><collision><origin rpy=\"0 1.5707963267948966 0\" xyz=\"0.0475 0 0\" /><geometry><cylinder length=\"0.035\" radius=\"0.04\" /></geometry></collision></link><link name=\"usb_cam_optical_frame\" /><joint name=\"camera_link_to_optical\" type=\"fixed\"><parent link=\"usb_cam_link\" /><child link=\"usb_cam_optical_frame\" /><origin rpy=\"-1.5707963267948966 0 -1.5707963267948966\" xyz=\"0.067 0 0\" /></joint><gazebo><static>true</static></gazebo><gazebo reference=\"usb_cam_link\"><material>Gazebo/Black</material><sensor name=\"rgb_camera\" type=\"camera\"><pose>0.067 0 0 0 0 0</pose><always_on>true</always_on><update_rate>20.0</update_rate><visualize>false</visualize><camera><horizontal_fov>1.5707963267948966</horizontal_fov><image><width>1280</width><height>720</height><format>R8G8B8</format></image><clip><near>0.1</near><far>100.0</far></clip><noise><type>gaussian</type><mean>0.0</mean><stddev>0.0</stddev></noise></camera><plugin filename=\"libxgc_gazebo_media_camera.so\" name=\"xgc_media_camera\"><sourceId>usb_cam</sourceId><frameId>usb_cam_optical_frame</frameId><rtpHost>127.0.0.1</rtpHost><rtpPort>30001</rtpPort><controlEndpoint>/granted/dddddddddddddddddddddddddddddddd.sock</controlEndpoint><controlTargetId>fixture</controlTargetId><controlInstanceId /><snapshotPoseFrameId>world</snapshotPoseFrameId><rosPublishEnabled>true</rosPublishEnabled><rosVideoTopic>/xgc/camera/world/video_h264</rosVideoTopic><rosFrameTimingTopic>/xgc/camera/world/frame_timing</rosFrameTimingTopic><rosCameraInfoTopic>/xgc/camera/world/camera_info</rosCameraInfoTopic><rosStreamInfoTopic>/xgc/camera/world/stream_info</rosStreamInfoTopic><rosPublisherQueueCapacity>8</rosPublisherQueueCapacity><bitrate>2000000</bitrate><maxBitrate>3000000</maxBitrate><pacingBitrate>6000000</pacingBitrate><vbvBufferMilliseconds>500</vbvBufferMilliseconds><jpegQuality>90</jpegQuality><snapshotJpegBackend>cpu</snapshotJpegBackend></plugin></sensor></gazebo></robot>"
+    },
+    {
+      "name": "fast_profile_dynamic",
+      "arguments": {
+        "media_control_endpoint": "/granted/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.sock",
+        "media_control_target_id": "fixture",
+        "media_rtp_port": "30003",
+        "camera_profile": "fixture_fast",
+        "camera_profiles_file": "@profiles@",
+        "static": "false",
+        "publish_encoded_video": "false"
+      },
+      "normalized_urdf": "<robot name=\"gazebo_static_camera\"><link name=\"usb_cam_link\"><inertial><mass value=\"0.2\" /><origin xyz=\"0 0 0\" /><inertia ixx=\"0.0004\" ixy=\"0\" ixz=\"0\" iyy=\"0.0004\" iyz=\"0\" izz=\"0.0004\" /></inertial><visual><geometry><box size=\"0.06 0.14 0.14\" /></geometry><material name=\"camera_black\"><color rgba=\"0.02 0.02 0.02 1\" /></material></visual><visual><origin rpy=\"0 1.5707963267948966 0\" xyz=\"0.0475 0 0\" /><geometry><cylinder length=\"0.035\" radius=\"0.04\" /></geometry><material name=\"camera_black\" /></visual><collision><geometry><box size=\"0.06 0.14 0.14\" /></geometry></collision><collision><origin rpy=\"0 1.5707963267948966 0\" xyz=\"0.0475 0 0\" /><geometry><cylinder length=\"0.035\" radius=\"0.04\" /></geometry></collision></link><link name=\"usb_cam_optical_frame\" /><joint name=\"camera_link_to_optical\" type=\"fixed\"><parent link=\"usb_cam_link\" /><child link=\"usb_cam_optical_frame\" /><origin rpy=\"-1.5707963267948966 0 -1.5707963267948966\" xyz=\"0.067 0 0\" /></joint><gazebo reference=\"usb_cam_link\"><gravity>false</gravity></gazebo><gazebo reference=\"usb_cam_link\"><material>Gazebo/Black</material><sensor name=\"rgb_camera\" type=\"camera\"><pose>0.067 0 0 0 0 0</pose><always_on>true</always_on><update_rate>60.0</update_rate><visualize>false</visualize><camera><horizontal_fov>1.1344640137963142</horizontal_fov><image><width>320</width><height>180</height><format>R8G8B8</format></image><clip><near>0.1</near><far>100.0</far></clip><noise><type>gaussian</type><mean>0.0</mean><stddev>0.0</stddev></noise></camera><plugin filename=\"libxgc_gazebo_media_camera.so\" name=\"xgc_media_camera\"><sourceId>usb_cam</sourceId><frameId>usb_cam_optical_frame</frameId><rtpHost>127.0.0.1</rtpHost><rtpPort>30003</rtpPort><controlEndpoint>/granted/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.sock</controlEndpoint><controlTargetId>fixture</controlTargetId><controlInstanceId /><snapshotPoseFrameId>world</snapshotPoseFrameId><rosPublishEnabled>false</rosPublishEnabled><rosVideoTopic>/xgc/camera/world/video_h264</rosVideoTopic><rosFrameTimingTopic>/xgc/camera/world/frame_timing</rosFrameTimingTopic><rosCameraInfoTopic>/xgc/camera/world/camera_info</rosCameraInfoTopic><rosStreamInfoTopic>/xgc/camera/world/stream_info</rosStreamInfoTopic><rosPublisherQueueCapacity>8</rosPublisherQueueCapacity><bitrate>2000000</bitrate><maxBitrate>3000000</maxBitrate><pacingBitrate>6000000</pacingBitrate><vbvBufferMilliseconds>500</vbvBufferMilliseconds><jpegQuality>90</jpegQuality><snapshotJpegBackend>auto</snapshotJpegBackend></plugin></sensor></gazebo></robot>"
+    },
+    {
+      "name": "sensor_encoder_overrides",
+      "arguments": {
+        "media_control_endpoint": "/granted/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.sock",
+        "media_control_target_id": "fixture",
+        "media_rtp_port": "40001",
+        "width": "640",
+        "height": "480",
+        "fps": "10",
+        "hfov_degrees": "57.29577951308232",
+        "near_clip": "0.05",
+        "far_clip": "20",
+        "noise_stddev": "0.001",
+        "media_bitrate": "2000000",
+        "media_max_bitrate": "3000000",
+        "media_pacing_bitrate": "6000000",
+        "media_vbv_buffer_milliseconds": "100",
+        "snapshot_jpeg_quality": "80",
+        "encoded_publisher_queue_capacity": "4"
+      },
+      "normalized_urdf": "<robot name=\"gazebo_static_camera\"><link name=\"usb_cam_link\"><inertial><mass value=\"0.2\" /><origin xyz=\"0 0 0\" /><inertia ixx=\"0.0004\" ixy=\"0\" ixz=\"0\" iyy=\"0.0004\" iyz=\"0\" izz=\"0.0004\" /></inertial><visual><geometry><box size=\"0.06 0.14 0.14\" /></geometry><material name=\"camera_black\"><color rgba=\"0.02 0.02 0.02 1\" /></material></visual><visual><origin rpy=\"0 1.5707963267948966 0\" xyz=\"0.0475 0 0\" /><geometry><cylinder length=\"0.035\" radius=\"0.04\" /></geometry><material name=\"camera_black\" /></visual><collision><geometry><box size=\"0.06 0.14 0.14\" /></geometry></collision><collision><origin rpy=\"0 1.5707963267948966 0\" xyz=\"0.0475 0 0\" /><geometry><cylinder length=\"0.035\" radius=\"0.04\" /></geometry></collision></link><link name=\"usb_cam_optical_frame\" /><joint name=\"camera_link_to_optical\" type=\"fixed\"><parent link=\"usb_cam_link\" /><child link=\"usb_cam_optical_frame\" /><origin rpy=\"-1.5707963267948966 0 -1.5707963267948966\" xyz=\"0.067 0 0\" /></joint><gazebo><static>true</static></gazebo><gazebo reference=\"usb_cam_link\"><material>Gazebo/Black</material><sensor name=\"rgb_camera\" type=\"camera\"><pose>0.067 0 0 0 0 0</pose><always_on>true</always_on><update_rate>10.0</update_rate><visualize>false</visualize><camera><horizontal_fov>1.0</horizontal_fov><image><width>640</width><height>480</height><format>R8G8B8</format></image><clip><near>0.05</near><far>20.0</far></clip><noise><type>gaussian</type><mean>0.0</mean><stddev>0.001</stddev></noise></camera><plugin filename=\"libxgc_gazebo_media_camera.so\" name=\"xgc_media_camera\"><sourceId>usb_cam</sourceId><frameId>usb_cam_optical_frame</frameId><rtpHost>127.0.0.1</rtpHost><rtpPort>40001</rtpPort><controlEndpoint>/granted/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.sock</controlEndpoint><controlTargetId>fixture</controlTargetId><controlInstanceId /><snapshotPoseFrameId>world</snapshotPoseFrameId><rosPublishEnabled>true</rosPublishEnabled><rosVideoTopic>/xgc/camera/world/video_h264</rosVideoTopic><rosFrameTimingTopic>/xgc/camera/world/frame_timing</rosFrameTimingTopic><rosCameraInfoTopic>/xgc/camera/world/camera_info</rosCameraInfoTopic><rosStreamInfoTopic>/xgc/camera/world/stream_info</rosStreamInfoTopic><rosPublisherQueueCapacity>4</rosPublisherQueueCapacity><bitrate>2000000</bitrate><maxBitrate>3000000</maxBitrate><pacingBitrate>6000000</pacingBitrate><vbvBufferMilliseconds>100</vbvBufferMilliseconds><jpegQuality>80</jpegQuality><snapshotJpegBackend>auto</snapshotJpegBackend></plugin></sensor></gazebo></robot>"
+    },
+    {
+      "name": "frames_topics_backend",
+      "arguments": {
+        "media_control_endpoint": "/granted/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.sock",
+        "media_control_target_id": "other-target",
+        "media_rtp_port": "65535",
+        "model_name": "yard_camera",
+        "camera_link_frame": "yard_link",
+        "optical_frame": "yard_optical",
+        "media_plugin_filename": "/granted/libcamera.so",
+        "media_source_id": "yard_cam",
+        "media_rtp_host": "localhost",
+        "media_control_instance_id": "1234567890abcdef1234567890abcdef",
+        "snapshot_pose_frame_id": "gazebo_world",
+        "snapshot_jpeg_backend": "hardware",
+        "encoded_video_topic": "/yard/video",
+        "frame_timing_topic": "/yard/timing",
+        "stream_info_topic": "/yard/info",
+        "xgc_camera_info_topic": "/yard/camera_info"
+      },
+      "normalized_urdf": "<robot name=\"gazebo_static_camera\"><link name=\"yard_link\"><inertial><mass value=\"0.2\" /><origin xyz=\"0 0 0\" /><inertia ixx=\"0.0004\" ixy=\"0\" ixz=\"0\" iyy=\"0.0004\" iyz=\"0\" izz=\"0.0004\" /></inertial><visual><geometry><box size=\"0.06 0.14 0.14\" /></geometry><material name=\"camera_black\"><color rgba=\"0.02 0.02 0.02 1\" /></material></visual><visual><origin rpy=\"0 1.5707963267948966 0\" xyz=\"0.0475 0 0\" /><geometry><cylinder length=\"0.035\" radius=\"0.04\" /></geometry><material name=\"camera_black\" /></visual><collision><geometry><box size=\"0.06 0.14 0.14\" /></geometry></collision><collision><origin rpy=\"0 1.5707963267948966 0\" xyz=\"0.0475 0 0\" /><geometry><cylinder length=\"0.035\" radius=\"0.04\" /></geometry></collision></link><link name=\"yard_optical\" /><joint name=\"camera_link_to_optical\" type=\"fixed\"><parent link=\"yard_link\" /><child link=\"yard_optical\" /><origin rpy=\"-1.5707963267948966 0 -1.5707963267948966\" xyz=\"0.067 0 0\" /></joint><gazebo><static>true</static></gazebo><gazebo reference=\"yard_link\"><material>Gazebo/Black</material><sensor name=\"rgb_camera\" type=\"camera\"><pose>0.067 0 0 0 0 0</pose><always_on>true</always_on><update_rate>30.0</update_rate><visualize>false</visualize><camera><horizontal_fov>1.9198621771937625</horizontal_fov><image><width>3840</width><height>2160</height><format>R8G8B8</format></image><clip><near>0.1</near><far>100.0</far></clip><noise><type>gaussian</type><mean>0.0</mean><stddev>0.0</stddev></noise></camera><plugin filename=\"/granted/libcamera.so\" name=\"xgc_media_camera\"><sourceId>yard_cam</sourceId><frameId>yard_optical</frameId><rtpHost>localhost</rtpHost><rtpPort>65535</rtpPort><controlEndpoint>/granted/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.sock</controlEndpoint><controlTargetId>other-target</controlTargetId><controlInstanceId>1234567890abcdef1234567890abcdef</controlInstanceId><snapshotPoseFrameId>gazebo_world</snapshotPoseFrameId><rosPublishEnabled>true</rosPublishEnabled><rosVideoTopic>/yard/video</rosVideoTopic><rosFrameTimingTopic>/yard/timing</rosFrameTimingTopic><rosCameraInfoTopic>/yard/camera_info</rosCameraInfoTopic><rosStreamInfoTopic>/yard/info</rosStreamInfoTopic><rosPublisherQueueCapacity>8</rosPublisherQueueCapacity><bitrate>24000000</bitrate><maxBitrate>36000000</maxBitrate><pacingBitrate>72000000</pacingBitrate><vbvBufferMilliseconds>500</vbvBufferMilliseconds><jpegQuality>90</jpegQuality><snapshotJpegBackend>hardware</snapshotJpegBackend></plugin></sensor></gazebo></robot>"
+    }
+  ]
+}

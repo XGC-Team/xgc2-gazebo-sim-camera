@@ -1,0 +1,37 @@
+schema_version: 1
+default_profile: fixture_narrow
+profiles:
+  fixture_narrow:
+    image:
+      width_px: 1280
+      height_px: 720
+      frame_rate_hz: 20.0
+    lens:
+      horizontal_fov_degrees: 90.0
+      near_clip_m: 0.1
+      far_clip_m: 100.0
+      gaussian_noise_stddev: 0.0
+    encoder:
+      average_bitrate_bps: 2000000
+      maximum_bitrate_bps: 3000000
+      pacing_bitrate_bps: 6000000
+      vbv_buffer_ms: 500
+    snapshot:
+      jpeg_quality: 90
+  fixture_fast:
+    image:
+      width_px: 320
+      height_px: 180
+      frame_rate_hz: 60.0
+    lens:
+      horizontal_fov_degrees: 65.0
+      near_clip_m: 0.1
+      far_clip_m: 100.0
+      gaussian_noise_stddev: 0.0
+    encoder:
+      average_bitrate_bps: 2000000
+      maximum_bitrate_bps: 3000000
+      pacing_bitrate_bps: 6000000
+      vbv_buffer_ms: 500
+    snapshot:
+      jpeg_quality: 90

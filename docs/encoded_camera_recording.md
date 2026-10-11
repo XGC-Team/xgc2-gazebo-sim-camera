@@ -94,14 +94,14 @@ is the stronger choice when loss cannot be tolerated.
 
 ## Configuration
 
-`static_camera.launch` exposes:
+`place_world_camera` embeds these plugin settings:
 
-- `publish_encoded_video` (default `true`);
-- `encoded_video_topic`, `frame_timing_topic`, and `stream_info_topic`;
-- `encoded_publisher_queue_capacity` (default `8`).
+- `--publish-encoded-video` (default `true`);
+- `--encoded-video-topic`, `--frame-timing-topic`, and `--stream-info-topic`;
+- `--encoded-publisher-queue-capacity` (default `8`).
 
 Set unique topics, source ID, frames, and RTP port for every
-additional camera.
+camera in a separate gzserver; one world camera socket is supported per process.
 
 ## Still images
 

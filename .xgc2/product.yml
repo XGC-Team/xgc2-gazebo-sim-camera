@@ -53,32 +53,21 @@ usage:
 
     '
   smoke_test: |
-    roslaunch --files gazebo_sim_camera static_camera.launch gui:=false \
-      world:="$SIMULATION_WORLD_FILE" simulation_endpoint:="$SIMULATION_ENDPOINT" target_id:="$SIMULATION_TARGET_ID" \
-      media_rtp_port:="$MEDIA_RTP_PORT" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON"
-    roslaunch --files gazebo_sim_camera intrinsic_calibration_world.launch gui:=false \
-      world:="$SIMULATION_WORLD_FILE" simulation_endpoint:="$SIMULATION_ENDPOINT" target_id:="$SIMULATION_TARGET_ID" \
-      media_rtp_port:="$MEDIA_RTP_PORT" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON"
-    roslaunch --files gazebo_sim_camera extrinsic_calibration_world.launch gui:=false vrpn_config:="$VRPN_CONFIG_FILE" \
-      world:="$SIMULATION_WORLD_FILE" simulation_endpoint:="$SIMULATION_ENDPOINT" target_id:="$SIMULATION_TARGET_ID" \
-      media_rtp_port:="$MEDIA_RTP_PORT" media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON"
-  notes: 'This product owns only an independent fixed-site camera. It does not modify
-
-    or depend on any FS150, Scout, UAV, or other vehicle camera model.
-
-    This package owns the installed process definition, Gazebo source plugin,
-
-    native camera entity lifecycle, and ROS package. Python XRPC consumers require an explicitly
-
-    selected interpreter >=3.8 (stock Focal Python 3.8 qualifies) with the released XRPC
-
-    wheel and ROS modules installed in that interpreter.
-
-    '
+    env -i /opt/ros/noetic/lib/gazebo_sim_camera/place_world_camera --help
+    roslaunch --files gazebo_sim_camera static_camera.launch \
+      media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" python_executable:="$SELECTED_PYTHON"
+    roslaunch --files gazebo_sim_camera camera_ar_rviz.launch
+  notes: >-
+    This product owns an independent world camera, its finite placement CLI,
+    ROS runtime and plugin. Core starts the runtime alongside media-edge and
+    runs placement after awaiting the world. At most one world camera socket
+    is supported per gzserver. Runtime Python XRPC consumers require a selected
+    interpreter >=3.8 with the released wheel and ROS modules installed.
 ownership:
   paths:
   - /opt/ros/noetic/share/gazebo_sim_camera
   - /opt/ros/noetic/lib/gazebo_sim_camera
+  - /opt/ros/noetic/lib/gazebo_sim_camera/place_world_camera
   - /opt/ros/noetic/lib/libxgc_gazebo_media_camera.so
   - /usr/share/xgc2/process-definitions/gazebo-static-camera.json
 release:

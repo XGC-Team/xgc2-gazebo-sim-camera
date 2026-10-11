@@ -29,7 +29,7 @@ class Parser(argparse.ArgumentParser):
 def parse_arguments(argv):
     share = Path(__file__).resolve().parents[1]
     if not (share / "urdf/fixed_rgb_camera.urdf.xacro").is_file():
-        share = Path("/opt/ros/noetic/share/gazebo_sim_camera")
+        share = Path(__file__).resolve().parents[2] / "share/gazebo_sim_camera"
     parser = Parser(prog=NAME, description=__doc__, allow_abbrev=False,
                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--world-endpoint", required=True, help="canonical absolute world socket path")
@@ -162,6 +162,8 @@ def main(argv=None):
         return 0
     except Exception as error:
         reason = " ".join(str(error).split()) or type(error).__name__
+        if contacted:
+            reason = args.model_name + ": " + reason
         print(NAME + ": " + reason, file=sys.stderr)
         return 1 if contacted else 2
 

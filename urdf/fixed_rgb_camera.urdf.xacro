@@ -4,7 +4,7 @@
   element before it visits child <xacro:arg> declarations, so using
   $(arg model_name) here makes a direct `xacro fixed_rgb_camera.urdf.xacro`
   invocation fail.  Gazebo's runtime model identity is supplied independently
-  by spawn_model's -model argument.
+  by the placement entity ID.
 -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="gazebo_static_camera">
   <xacro:arg name="model_name" default="gazebo_static_camera"/>
@@ -26,9 +26,9 @@
   <xacro:arg name="stream_info_topic" default="/xgc/camera/world/stream_info"/>
   <xacro:arg name="encoded_publisher_queue_capacity" default="8"/>
   <!--
-    "profile" means use the selected atomic parameter group. Explicit launch
-    overrides remain available for direct roslaunch callers and tests, while
-    the managed ProcessDefinition exposes the profile and FOV in degrees.
+    "profile" means use the selected atomic parameter group. Explicit placement
+    overrides remain available to CLI callers and tests. The runtime publisher
+    receives matching profile and FOV inputs for CameraInfo metadata.
   -->
   <xacro:arg name="media_bitrate" default="profile"/>
   <xacro:arg name="media_max_bitrate" default="profile"/>
@@ -127,10 +127,10 @@
   <!--
     Fixed-site default (static:=true): the camera is pinned so it never falls.
     Movable mode (static:=false, used by the calibration/teleop world): the
-    model stays in the physics engine so /gazebo/set_model_state can reposition
+    model stays in the physics engine so native simulation-v1 pose operations can reposition
     it, while per-link gravity is disabled so it floats in place instead of
     falling.  A <static>true</static> model is excluded from physics entirely,
-    so set_model_state silently fails to move it (and the render never changes).
+    so physics pose updates cannot move it (and the render never changes).
   -->
   <xacro:if value="$(arg static)">
     <gazebo><static>true</static></gazebo>

@@ -77,7 +77,7 @@
           },
           "poseSource": {
             "type": "string",
-            "description": "authored uses x/y/z/rpy for runtime TF. file or resolved initializes TF from the selected extrinsic. Placement receives its pose separately.",
+            "description": "authored keeps the runtime launch default TF pose. file or resolved initializes TF from the selected extrinsic. Placement receives its pose separately.",
             "default": "authored",
             "enum": [
               "authored",
@@ -111,36 +111,6 @@
             "description": "Selected interpreter with the released XRPC wheel and ROS modules installed.",
             "fixedOnly": true,
             "x-xgc-path-kind": "file"
-          },
-          "x": {
-            "type": "number",
-            "default": -4.0,
-            "description": "Runtime TF pose; must match the separately placed camera when publishing truth."
-          },
-          "y": {
-            "type": "number",
-            "default": 0.0,
-            "description": "Runtime TF pose; must match the separately placed camera when publishing truth."
-          },
-          "z": {
-            "type": "number",
-            "default": 1.5,
-            "description": "Runtime TF pose; must match the separately placed camera when publishing truth."
-          },
-          "roll": {
-            "type": "number",
-            "default": 0.0,
-            "description": "Runtime TF pose; must match the separately placed camera when publishing truth."
-          },
-          "pitch": {
-            "type": "number",
-            "default": 0.0,
-            "description": "Runtime TF pose; must match the separately placed camera when publishing truth."
-          },
-          "yaw": {
-            "type": "number",
-            "default": 0.0,
-            "description": "Runtime TF pose; must match the separately placed camera when publishing truth."
           },
           "mode": {
             "type": "string",
@@ -222,12 +192,6 @@
           "intrinsic_file:=${intrinsicFile}",
           "media_source_id:=${mediaSourceId}",
           "media_control_endpoint:=${mediaControlEndpoint}",
-          "x:=${x}",
-          "y:=${y}",
-          "z:=${z}",
-          "roll:=${roll}",
-          "pitch:=${pitch}",
-          "yaw:=${yaw}",
           "mode:=${mode}",
           "publish_truth_tf:=${publishTruthTf}",
           "publish_xgc_contract:=${publishXgcContract}",

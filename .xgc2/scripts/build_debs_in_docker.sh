@@ -58,13 +58,13 @@ docker run --rm \
     printf "%s\n" "{\"url\":\"https://github.com/XGC-Team/xgc2-xrpc/releases/download/v0.2.0-1/xgc2_xrpc-0.2.0-py3-none-any.whl\",\"archive_info\":{\"hashes\":{\"sha256\":\"fc81fe2ee5ef1abf2e7313ff4ae9401ce60f3dee14292b5228ea46e01f97c298\"}}}" \
       > /workspace/work/sdk/xgc2_xrpc-0.2.0.dist-info/direct_url.json
     export PYTHONPATH="/workspace/work/sdk:${PYTHONPATH:-}"
-    catkin_make
+    catkin_make -j2
     # The Python tests import the just-built scripts through the source overlay.
     source /workspace/work/devel/setup.bash
     LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x720x24" \
-      catkin_make run_tests_gazebo_sim_camera
+      catkin_make -j2 run_tests_gazebo_sim_camera
     catkin_test_results
-    DESTDIR=/workspace/work/install-root catkin_make install -DCMAKE_INSTALL_PREFIX=/opt/ros/noetic -DCATKIN_ENABLE_TESTING=OFF
+    DESTDIR=/workspace/work/install-root catkin_make -j2 install -DCMAKE_INSTALL_PREFIX=/opt/ros/noetic -DCATKIN_ENABLE_TESTING=OFF
     /workspace/repo/.xgc2/scripts/package_debs.sh --install-root /workspace/work/install-root --output-dir /workspace/out
     if [[ "${INSTALL_CHECK}" == true ]]; then
       apt-get install -y /workspace/out/ros-noetic-xgc2-gazebo-sim-camera_*.deb

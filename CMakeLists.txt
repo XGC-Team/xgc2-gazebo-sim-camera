@@ -139,6 +139,7 @@ install(DIRECTORY
 
 if(CATKIN_ENABLE_TESTING)
   catkin_add_nosetests(test/test_camera_intrinsic_selection.py)
+  catkin_add_nosetests(test/test_place_world_camera.py)
   catkin_add_nosetests(test/test_parallel_launch.py)
   catkin_add_nosetests(test/test_peer_start_order.py)
   add_library(test_snapshot_jpeg_hardware_plugin SHARED
