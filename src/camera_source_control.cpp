@@ -95,6 +95,7 @@ CameraSourceControlHost::CameraSourceControlHost(const std::string &path,
   limits_ = std::make_unique<const xgc2::xrpc::HttpLimits>(limits);
   xgc2::xrpc::UnixOptions endpoint;
   endpoint.path = path;
+  endpoint.existing = xgc2::xrpc::ExistingPath::ReclaimUnreachable;
   server_ = std::make_unique<xgc2::xrpc::HttpServer>(endpoint,
       [this](auto request, auto reply) {
         ControlRequest domain{request.method, request.target, std::move(request.body), request.request_id, request.deadline};

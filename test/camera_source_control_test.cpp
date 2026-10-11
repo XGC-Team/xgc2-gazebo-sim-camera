@@ -4,14 +4,29 @@
 #include <filesystem>
 #include <future>
 #include <iostream>
+#include <cstring>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/un.h>
 #include <unistd.h>
 using namespace gazebo_sim_camera;
 using namespace xgc2::xrpc;
 int main() {
   char directory[] = "/tmp/sol6-camera-XXXXXX";
   assert(::mkdtemp(directory));
-  const auto endpoint = std::string(directory) + "/source.sock";
+  const auto endpoint = std::string(directory) + "/" + new_instance_id() + ".sock";
   const auto instance = new_instance_id();
+  sockaddr_un address{};
+  address.sun_family = AF_UNIX;
+  assert(endpoint.size() < sizeof(address.sun_path));
+  std::memcpy(address.sun_path, endpoint.c_str(), endpoint.size() + 1);
+  // A crashed listener leaves its socket inode behind. The plugin is the
+  // authority outside the supervisor and must reclaim only unreachable paths.
+  int stale = ::socket(AF_UNIX, SOCK_STREAM, 0);
+  assert(stale >= 0);
+  assert(::bind(stale, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0);
+  assert(::close(stale) == 0);
+  assert(std::filesystem::exists(endpoint));
   {
     auto host = CameraSourceControlHost::Acquire(endpoint, "fixture-target", instance);
     auto second = CameraSourceControlHost::Acquire(endpoint, "fixture-target");
@@ -134,7 +149,27 @@ int main() {
     returned_consumer.close();
   }
   assert(!std::filesystem::exists(endpoint));
+  // A reachable owner must survive a competing bind, including its socket
+  // inode. No existing shared-host handle is present for this attempt.
+  const int live = ::socket(AF_UNIX, SOCK_STREAM, 0);
+  assert(live >= 0);
+  assert(::bind(live, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0);
+  assert(::listen(live, 4) == 0);
+  struct stat before{}, after{};
+  assert(::lstat(endpoint.c_str(), &before) == 0);
+  bool refused = false;
+  try { CameraSourceControlHost::Acquire(endpoint, "fixture-target"); }
+  catch (const std::exception&) { refused = true; }
+  assert(refused);
+  assert(::lstat(endpoint.c_str(), &after) == 0);
+  assert(before.st_dev == after.st_dev && before.st_ino == after.st_ino);
+  const int consumer = ::socket(AF_UNIX, SOCK_STREAM, 0);
+  assert(consumer >= 0);
+  assert(::connect(consumer, reinterpret_cast<const sockaddr*>(&address), sizeof(address)) == 0);
+  assert(::close(consumer) == 0);
+  assert(::close(live) == 0);
+  assert(::unlink(endpoint.c_str()) == 0);
   std::filesystem::remove_all(directory);
   std::cout << "camera shared XRPC host: envelope/unbound readiness/invalid queries/removed route/"
-      "multi-source/fencing/strict JSON/capture bound/lifetime PASS\n";
+      "multi-source/fencing/strict JSON/capture bound/lifetime/stale reclaim/live owner PASS\n";
 }
