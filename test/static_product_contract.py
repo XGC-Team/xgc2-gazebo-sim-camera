@@ -226,7 +226,7 @@ run_contract = docker_build.index(
 assert source_build < source_overlay < run_contract
 assert "LIBGL_ALWAYS_SOFTWARE=1 xvfb-run" in docker_build
 
-assert '<arg name="vrpn_use_server_time" default="false"/>' in extrinsic
+assert '<arg name="vrpn_use_server_time" default="true"/>' in extrinsic
 assert '<arg name="use_server_time" value="$(arg vrpn_use_server_time)"/>' in extrinsic
 
 print("Static product contracts passed")
