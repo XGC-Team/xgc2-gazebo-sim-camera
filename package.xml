@@ -16,6 +16,7 @@
   <depend>foxglove_msgs</depend>
   <depend>roscpp</depend>
   <depend>xgc_camera_msgs</depend>
+  <depend>xgc2_gazebo_scene</depend>
   <exec_depend>gazebo_ros</exec_depend>
   <exec_depend>rospy</exec_depend>
   <depend>sensor_msgs</depend>

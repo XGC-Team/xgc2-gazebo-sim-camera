@@ -30,6 +30,7 @@ apt:
   - ros-noetic-gazebo-ros
   - ros-noetic-foxglove-msgs
   - ros-noetic-roscpp
+  - ros-noetic-xgc2-gazebo-scene
   - ros-noetic-rospy
   - ros-noetic-roslaunch
   - ros-noetic-rostopic

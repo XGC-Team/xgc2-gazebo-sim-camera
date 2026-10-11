@@ -82,5 +82,10 @@
   <node if="$(arg keyboard_teleop)" pkg="gazebo_sim_camera"
         type="keyboard_camera_teleop.py" launch-prefix="$(arg python_executable)" name="gazebo_camera_keyboard_teleop"
         output="screen" required="false"
-        args="--simulation-service-ref-json '$(arg simulation_service_ref_json)' --target-id $(arg target_id) --model-name $(arg model_name) --linear-step $(arg keyboard_linear_step) --angular-step $(arg keyboard_angular_step)"/>
+        args="--world $(arg world) --simulation-service-ref-json '$(arg simulation_service_ref_json)' --target-id $(arg target_id) --model-name $(arg model_name) --linear-step $(arg keyboard_linear_step) --angular-step $(arg keyboard_angular_step)">
+    <rosparam param="initial_pose" subst_value="true">
+      position: [$(arg camera_x), $(arg camera_y), $(arg camera_z)]
+      rotation: [$(arg camera_roll), $(arg camera_pitch), $(arg camera_yaw)]
+    </rosparam>
+  </node>
 </launch>

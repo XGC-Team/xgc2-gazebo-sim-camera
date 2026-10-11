@@ -21,7 +21,7 @@ from geometry_msgs.msg import TransformStamped
 from tf.transformations import quaternion_from_euler
 from tf2_msgs.msg import TFMessage
 import yaml
-from xgc2_xrpc import Client, Runtime, ServiceRef, TransportError
+from camera_peer import CameraPeer
 
 
 _CAMERA_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,63}$")
@@ -244,13 +244,15 @@ class CameraContractPublisher:
         self._transform_period = 1.0 / transform_rate
         # CameraInfo comes from the selected calibration file when supplied;
         # it is never inferred from image transport metadata.
-        self._apply_camera_info_metadata()
         self._publish_transforms()
         if self._application is not None:
             self._application.initial_published()
             rospy.on_shutdown(self._close_application)
+        self._media_peer = CameraPeer(rospy.get_param("~media_control_endpoint"),
+            rospy.get_param("~media_control_target_id"), "camera-source", self._apply_camera_info_metadata)
         self._transform_thread = threading.Thread(target=self._transform_loop, daemon=True)
         self._transform_thread.start()
+        rospy.on_shutdown(self.close)
 
     def _set_frozen_estimate(self, frozen):
         from xgc_camera_calibration.transforms import split_parent_to_optical_pose
@@ -298,49 +300,34 @@ class CameraContractPublisher:
                 next_refresh = time.monotonic() + 1.0
             self._publish_transforms()
 
-    def _apply_camera_info_metadata(self):
-        endpoint = rospy.get_param("~media_control_endpoint")
+    def close(self):
+        self._stop_event.set()
+        self._media_peer.close()
+        self._transform_thread.join()
+
+    def _apply_camera_info_metadata(self, client, description, stop):
         source_id = _stable_camera_name(rospy.get_param("~media_source_id"))
-        target_id = rospy.get_param("~media_control_target_id")
+        if source_id not in description["facts"]["sources"]:
+            raise RuntimeError("camera source has not registered")
         route = "/v1/media/sources/" + source_id
-        runtime = Runtime(blocking_workers=1, max_calls=4, max_connections=4)
-        discovery = Client(endpoint, runtime=runtime)
-        client = None
-        try:
-            # This explicitly bounded startup wait only discovers the authored
-            # provider. The actual CAS mutation is submitted exactly once.
-            deadline = time.monotonic() + 30.0
-            while True:
-                try:
-                    description = discovery.json("/v1/describe", method="GET", timeout=1)
-                    if description["ready"] and source_id in description["facts"]["sources"]:
-                        break
-                except (TransportError, OSError):
-                    pass
-                if time.monotonic() >= deadline or rospy.is_shutdown():
-                    raise RuntimeError("native camera source did not register before startup deadline")
-                time.sleep(0.05)
-            reference = description["facts"]["service_ref"]
-            if reference["service"] != "camera-source" or reference["api_version"] != "v1" or reference["endpoint"]["address"] != endpoint:
-                raise RuntimeError("camera source ServiceRef does not match authored binding")
-            client = Client.from_service(ServiceRef.from_dict(reference), runtime=runtime, local_target=target_id)
-            descriptor = client.json(route + "/describe", method="GET")
-            status = client.json(route + "/config", method="GET")
-            if "calibration-metadata" not in descriptor.get("capabilities", []):
-                raise RuntimeError("native camera source cannot publish calibration metadata")
-            result = client.json(route + "/config", {
+        descriptor = client.json(route + "/describe", method="GET")
+        if "calibration-metadata" not in descriptor.get("capabilities", []):
+            raise RuntimeError("native camera source cannot publish calibration metadata")
+        calibration = {"scope": "calibration-metadata", "model": self._distortion_model,
+                       "width": self._width, "height": self._height,
+                       "camera_matrix": list(self._camera_matrix), "distortion": list(self._distortion)}
+        status = client.json(route + "/config", method="GET")
+        if status.get("pending"):
+            raise RuntimeError("camera metadata application is still pending")
+        # Reconcile a lost reply before any write. The provider's revision and
+        # publication acknowledgment fence a single replay of this owned state.
+        if status.get("applied", {}).get("calibration") != calibration:
+            status = client.json(route + "/config", {
                 "expected_revision": status["desired_revision"], "persist": False,
-                "config": {"calibration": {"scope": "calibration-metadata",
-                    "model": self._distortion_model, "width": self._width,
-                    "height": self._height, "camera_matrix": list(self._camera_matrix),
-                    "distortion": list(self._distortion)}}}, method="PATCH", timeout=8)
-            if result["receipt"]["stage"] != "completed" or result["published_calibration_revision"] != result["applied_revision"]:
-                raise RuntimeError("native CameraInfo publication was not acknowledged")
-        finally:
-            if client is not None:
-                client.close()
-            discovery.close()
-            runtime.close()
+                "config": {"calibration": calibration}}, method="PATCH", timeout=8)
+        if status.get("pending") or status["published_calibration_revision"] != status["applied_revision"]:
+            raise RuntimeError("native CameraInfo publication is not yet acknowledged")
+        return route + "/observe/", status["event_revision"]
 
     def _publish_transforms(self, _event=None):
         stamp = rospy.Time.now()

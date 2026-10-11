@@ -7,6 +7,11 @@ import math
 import re
 import subprocess
 import sys
+import json
+import random
+import threading
+import time
+import xml.etree.ElementTree as ET
 if sys.version_info < (3, 8):
     raise RuntimeError("the selected camera interpreter must provide Python >= 3.8 and the formal XRPC wheel")
 
@@ -14,7 +19,9 @@ import numpy as np
 import rospy
 from tf.transformations import quaternion_from_euler, quaternion_matrix, quaternion_multiply
 
+from geometry_msgs.msg import Pose
 from drive_intrinsic_calibration import GazeboModelController
+from camera_peer import CameraPeer
 
 
 KEY_LEFT = 0x01000012
@@ -77,18 +84,57 @@ def print_controls(linear_step, angular_step):
     )
 
 
-def resolve_keyboard_topic(requested):
+def resolve_keyboard_topic(requested, world):
     if not requested.startswith("~"):
         return requested
-    try:
-        output = subprocess.check_output(
-            ["gz", "topic", "-l"], universal_newlines=True, timeout=2.0
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    suffix = requested[1:]
-    candidates = [line.strip() for line in output.splitlines() if line.strip().endswith(suffix)]
-    return candidates[0] if len(candidates) == 1 else None
+    # The prepared world is an owned launch input; resolving its name needs no
+    # process, network probe or topic-list polling.
+    name = ET.parse(world).getroot().find("world").attrib["name"]
+    return "/gazebo/" + name + requested[1:]
+
+
+class CameraPosePublisher:
+    def __init__(self, model_name, service_ref_json, target_id):
+        self.model_name, self.target_id = model_name, target_id
+        self.reference = json.loads(service_ref_json)
+        self._lock = threading.Lock()
+        self._pose, self._revision, self._applied = None, 0, 0
+        self._peer = None
+
+    def set_pose(self, pose):
+        with self._lock:
+            self._pose = copy.deepcopy(pose)
+            self._revision += 1
+        # GUI idle starts no control connection. One bounded slot holds the
+        # latest desired pose while the world or camera entity is unavailable.
+        if self._peer is None:
+            self._peer = CameraPeer(self.reference["endpoint"]["address"], self.target_id,
+                                    "xgc2.simulation", self._apply)
+        else:
+            self._peer.wake()
+
+    def _apply(self, client, description, stop):
+        reference = description.get("service_ref", description.get("facts", {}).get("service_ref"))
+        controller = GazeboModelController(self.model_name, service_ref_json=json.dumps(reference),
+                                          target_id=self.target_id, runtime=client.runtime)
+        try:
+            while not stop.is_set():
+                with self._lock:
+                    pose, revision = copy.deepcopy(self._pose), self._revision
+                # Reading the actual pose reconciles a lost write reply first.
+                current = controller.current_pose()
+                if current != pose:
+                    controller.set_pose(pose)
+                with self._lock:
+                    self._applied = revision
+                    if revision == self._revision:
+                        return
+        finally:
+            controller.close()
+
+    def close(self):
+        if self._peer is not None:
+            self._peer.close()
 
 
 def keyboard_stream_command(topic):
@@ -149,28 +195,36 @@ def parser():
     result.add_argument("--minimum-step-scale", type=float, default=0.125)
     result.add_argument("--maximum-step-scale", type=float, default=8.0)
     result.add_argument("--topic", default="~/keyboard/keypress")
+    result.add_argument("--world", required=True)
     return result
 
 
 def main():
     args = parser().parse_args(rospy.myargv(argv=sys.argv)[1:])
     rospy.init_node("gazebo_camera_keyboard_teleop")
-    controller = GazeboModelController(args.model_name, service_ref_json=args.simulation_service_ref_json, target_id=args.target_id)
-    pose = controller.current_pose()
-    initial_pose = controller.current_pose()
+    controller = CameraPosePublisher(args.model_name, args.simulation_service_ref_json, args.target_id)
+    initial = rospy.get_param("~initial_pose")
+    pose = Pose()
+    pose.position.x, pose.position.y, pose.position.z = initial["position"]
+    rotation = quaternion_from_euler(*initial["rotation"])
+    pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = rotation
+    initial_pose = copy.deepcopy(pose)
     linear_step = args.linear_step
     angular_step = args.angular_step
     print_controls(linear_step, angular_step)
     key_pattern = re.compile(r"(?:int_value|data):\s*(-?\d+)")
     process = None
     quit_requested = False
+    stopped = threading.Event()
+    def stop():
+        stopped.set()
+        if process is not None and process.poll() is None:
+            process.terminate()
+    rospy.on_shutdown(stop)
+    resolved_topic = resolve_keyboard_topic(args.topic, args.world)
+    ceiling, last_log, suppressed = 0.25, None, 0
     try:
         while not rospy.is_shutdown() and not quit_requested:
-            resolved_topic = resolve_keyboard_topic(args.topic)
-            if resolved_topic is None:
-                rospy.logwarn("Waiting for Gazebo keyboard topic %s", args.topic)
-                rospy.sleep(1.0)
-                continue
             process = subprocess.Popen(
                 keyboard_stream_command(resolved_topic),
                 stdout=subprocess.PIPE,
@@ -184,6 +238,7 @@ def main():
                 match = key_pattern.search(line)
                 if not match:
                     continue
+                ceiling, last_log, suppressed = 0.25, None, 0
                 key = int(match.group(1))
                 if key == KEY_ESCAPE:
                     quit_requested = True
@@ -216,10 +271,23 @@ def main():
                 )
                 if changed:
                     controller.set_pose(pose)
-                    rospy.loginfo("Camera %s", pose_summary(pose))
+                    rospy.loginfo("Requested camera %s", pose_summary(pose))
+            if process.poll() is None:
+                process.terminate()
+            try:
+                process.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            process.stdout.close()
             if not rospy.is_shutdown() and not quit_requested:
-                rospy.logwarn("Gazebo keyboard stream closed; reconnecting to %s", resolved_topic)
-                rospy.sleep(1.0)
+                suppressed += 1
+                now = time.monotonic()
+                if last_log is None or now - last_log >= 10:
+                    rospy.logwarn("Gazebo keyboard stream closed (%d failures since last summary)", suppressed)
+                    last_log, suppressed = now, 0
+                stopped.wait(random.uniform(0, ceiling))
+                ceiling = min(30, ceiling * 2)
     finally:
         if process is not None and process.poll() is None:
             process.terminate()
@@ -227,6 +295,9 @@ def main():
                 process.wait(timeout=2.0)
             except subprocess.TimeoutExpired:
                 process.kill()
+            process.wait()
+        if process is not None:
+            process.stdout.close()
         controller.close()
     return 0
 

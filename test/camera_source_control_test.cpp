@@ -108,8 +108,19 @@ int main() {
     host->ReleaseCapture();
     assert(second->ReserveCapture());
     second->ReleaseCapture();
+    // Consumers are late and disposable; disconnecting them cannot end the
+    // shared host or discard its registered sources and capture ownership.
+    client.close();
+    for (int restart = 0; restart < 3; ++restart) {
+      HttpClient consumer(endpoint, {}, instance);
+      result = call(consumer, "/v1/media/sources/world/status");
+      assert(result.status == 200 && ParseControlJSON(result.body)["source_id"] == "world");
+      assert(call(discovery, "/v1/describe?wait_ready_ms=30000").status == 200);
+      consumer.close();
+    }
+    HttpClient returned_consumer(endpoint, {}, instance);
     host->Unregister("world");
-    assert(call(client, "/v1/media/sources/world").status == 404);
+    assert(call(returned_consumer, "/v1/media/sources/world").status == 404);
     host->Unregister("front");
     for (int i = 0; i < 16; ++i) host->Register("camera-" + std::to_string(i), [](auto, const auto &, const auto &, auto reply) { reply.complete(JSONResponse(Json::Value(Json::objectValue))); }, [] {});
     rejected = false;
@@ -120,7 +131,7 @@ int main() {
     value = ParseControlJSON(result.body);
     assert(result.status == 200 && value["ready"].asBool() && value["facts"]["sources"].empty());
     discovery.close();
-    client.close();
+    returned_consumer.close();
   }
   assert(!std::filesystem::exists(endpoint));
   std::filesystem::remove_all(directory);

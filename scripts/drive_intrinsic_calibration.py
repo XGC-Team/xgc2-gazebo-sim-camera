@@ -8,6 +8,7 @@ import sys
 if sys.version_info < (3, 8):
     raise RuntimeError("the selected camera interpreter must provide Python >= 3.8 and the formal XRPC wheel")
 import time
+import threading
 
 import cv2
 import numpy as np
@@ -160,7 +161,7 @@ class GazeboModelController:
         self._client = None
         try:
             self._client, _ = bind_simulation_service(service_ref_json, target_id, self._runtime)
-            self._reference = self._entity()["ref"]
+            self._reference = None
         except BaseException:
             if self._client is not None:
                 self._client.close()
@@ -178,8 +179,9 @@ class GazeboModelController:
         entities = result.get("entities", [])
         if len(entities) != 1 or entities[0]["ref"]["id"] != self.model_name:
             raise RuntimeError("simulation provider did not return the camera EntityRef")
-        if hasattr(self, "_reference") and entities[0]["ref"] != self._reference:
+        if self._reference is not None and entities[0]["ref"] != self._reference:
             raise RuntimeError("camera entity was replaced; generation no longer matches")
+        self._reference = entities[0]["ref"]
         return entities[0]
 
     def current_pose(self):
@@ -190,6 +192,8 @@ class GazeboModelController:
         return pose
 
     def set_pose(self, pose):
+        if self._reference is None:
+            self._entity()
         state = {"position": [pose.position.x, pose.position.y, pose.position.z],
                  "orientation": [pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]}
         operation = self._client.json("/v1/entities/" + self.model_name + "/state",
@@ -233,20 +237,32 @@ def calibration_views(target=(2.0, 0.0, 2.2)):
 
 def wait_for_detection(image_topic, board_size, timeout, maximum_width):
     deadline = time.monotonic() + timeout
-    last_error = None
-    while not rospy.is_shutdown() and time.monotonic() < deadline:
-        remaining = max(0.1, deadline - time.monotonic())
-        try:
-            message = rospy.wait_for_message(image_topic, Image, timeout=min(1.0, remaining))
-            parameters = checkerboard_parameters(
-                image_to_gray(message), board_size, maximum_width=maximum_width
-            )
-            if parameters is not None:
-                return parameters
-        except (rospy.ROSException, ValueError) as error:
-            last_error = error
-    if last_error:
-        rospy.logwarn("No checkerboard detection: %s", last_error)
+    condition = threading.Condition()
+    latest = [None]
+    def receive(message):
+        with condition:
+            latest[0] = message
+            condition.notify()
+    subscription = rospy.Subscriber(image_topic, Image, receive, queue_size=1)
+    try:
+        while not rospy.is_shutdown():
+            with condition:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                if latest[0] is None:
+                    condition.wait(min(remaining, 0.5))
+                    continue
+                message, latest[0] = latest[0], None
+            try:
+                parameters = checkerboard_parameters(image_to_gray(message), board_size,
+                                                     maximum_width=maximum_width)
+                if parameters is not None:
+                    return parameters
+            except ValueError as error:
+                rospy.logwarn_throttle(10, "No checkerboard detection: %s", error)
+    finally:
+        subscription.unregister()
     return None
 
 

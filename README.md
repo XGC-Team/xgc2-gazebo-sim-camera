@@ -109,18 +109,28 @@ per-instance launch parameters.
 | --- | --- | --- | --- |
 | `world_wide_4k30_110` (default) | 3840×2160 at 30 fps | 110° | 24 / 36 / 72 Mbit/s |
 
-The workflow owner explicitly starts the prepared native world and supplies its
-complete simulation ServiceRef and target grant. Select a complete parameter
+The workflow owner allocates the world and camera endpoints before starting
+the prepared native world, camera launch and consumers in parallel. The camera
+launch uses `roslaunch --wait`; entity creation and CameraInfo metadata wait off
+the TF publication path, watch the runtime socket directory and reconcile once
+per peer instance. A missing socket causes no connection polling. Failed calls
+use full jitter from 250 ms to a 30-second cap and one log summary per 10 seconds.
+The ROS publisher uses the scene package's shared master watcher, so Gazebo can
+serve source control before the master exists; a replaced master ends the bound
+Gazebo process. Source status includes the master state and identity. Consumers
+may connect late or restart without restarting the source host.
+
+Supply the allocated simulation ServiceRef and target grant. Select a complete parameter
 group with:
 
 ```bash
-roslaunch gazebo_sim_camera static_camera.launch \
+roslaunch --wait gazebo_sim_camera static_camera.launch \
   world:=/absolute/prepared-camera.world \
   simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
   media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
   python_executable:="$CAMERA_PYTHON_EXECUTABLE" camera_profile:=world_wide_4k30_110 gui:=false
 
-roslaunch gazebo_sim_camera static_camera.launch \
+roslaunch --wait gazebo_sim_camera static_camera.launch \
   world:=/absolute/prepared-camera.world \
   simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
   media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
@@ -150,7 +160,7 @@ Identity, endpoints, and placement can be changed without creating another
 optics profile:
 
 ```bash
-roslaunch gazebo_sim_camera static_camera.launch \
+roslaunch --wait gazebo_sim_camera static_camera.launch \
   camera_profile:=world_wide_4k30_110 \
   model_name:=yard_camera \
   world:=/absolute/prepared-camera.world \
@@ -182,13 +192,13 @@ The intrinsic and extrinsic launch files pass the selected camera profile
 through the same `static_camera.launch` workflow:
 
 ```bash
-roslaunch gazebo_sim_camera intrinsic_calibration_world.launch \
+roslaunch --wait gazebo_sim_camera intrinsic_calibration_world.launch \
   world:=/absolute/prepared-camera.world \
   simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \
   media_control_endpoint:="$MEDIA_CONTROL_ENDPOINT" media_control_target_id:="$MEDIA_CONTROL_TARGET_ID" \
   python_executable:="$CAMERA_PYTHON_EXECUTABLE" camera_profile:=world_wide_4k30_110 gui:=false
 
-roslaunch gazebo_sim_camera extrinsic_calibration_world.launch \
+roslaunch --wait gazebo_sim_camera extrinsic_calibration_world.launch \
   camera_profile:=world_wide_4k30_110 \
   world:=/absolute/prepared-extrinsic.world \
   simulation_service_ref_json:="$SIMULATION_SERVICE_REF_JSON" target_id:="$SIMULATION_TARGET_ID" \

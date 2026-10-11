@@ -6,6 +6,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   sensor_msgs
   xgc_camera_msgs
+  xgc2_gazebo_scene
 )
 find_package(gazebo REQUIRED)
 find_package(GLEW REQUIRED)
@@ -31,7 +32,7 @@ option(XGC_BUILD_NVJPEG_BACKEND "Build the optional CUDA/nvJPEG snapshot module"
 
 catkin_package(
   LIBRARIES xgc_gazebo_media_camera
-  CATKIN_DEPENDS foxglove_msgs roscpp sensor_msgs xgc_camera_msgs
+  CATKIN_DEPENDS foxglove_msgs roscpp sensor_msgs xgc_camera_msgs xgc2_gazebo_scene
 )
 
 find_package(Threads REQUIRED)
@@ -122,6 +123,9 @@ catkin_install_python(PROGRAMS
   scripts/keyboard_camera_teleop.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
+install(FILES scripts/camera_peer.py DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
+configure_file(scripts/camera_peer.py
+  ${CATKIN_DEVEL_PREFIX}/${CATKIN_PACKAGE_BIN_DESTINATION}/camera_peer.py COPYONLY)
 
 install(DIRECTORY
   config
@@ -137,6 +141,9 @@ install(DIRECTORY
 
 if(CATKIN_ENABLE_TESTING)
   catkin_add_nosetests(test/test_camera_intrinsic_selection.py)
+  catkin_add_nosetests(test/test_keyboard_camera_teleop.py)
+  catkin_add_nosetests(test/test_parallel_launch.py)
+  catkin_add_nosetests(test/test_peer_start_order.py)
   add_library(test_snapshot_jpeg_hardware_plugin SHARED
     test/fake_snapshot_jpeg_hardware.cpp
   )

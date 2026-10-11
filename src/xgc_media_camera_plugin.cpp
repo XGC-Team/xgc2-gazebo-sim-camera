@@ -11,6 +11,7 @@
 #include "fresh_render_gate.h"
 #include "snapshot_jpeg_backend.h"
 #include "camera_source_control.h"
+#include <xgc2_gazebo_scene/ros_master_registration.hpp>
 
 #include <gazebo/common/Console.hh>
 #include <gazebo/common/Events.hh>
@@ -91,15 +92,21 @@ class CameraROSDataRuntime {
     return result;
   }
   ros::CallbackQueue queue;
+  void Start() {
+    std::call_once(started_, [this] {
+      spinner_ = std::make_unique<ros::AsyncSpinner>(1, &queue);
+      spinner_->start();
+    });
+  }
  private:
   CameraROSDataRuntime() {
     if (!ros::isInitialized()) {
       int argc = 0; char **argv = nullptr;
-      ros::init(argc, argv, "xgc_native_camera_data", ros::init_options::NoSigintHandler);
+      ros::init(argc, argv, "xgc_native_camera_data", ros::init_options::NoSigintHandler |
+                ros::init_options::NoRosout | ros::init_options::NoSimTime);
     }
-    spinner_ = std::make_unique<ros::AsyncSpinner>(1, &queue);
-    spinner_->start();
   }
+  std::once_flag started_;
   std::unique_ptr<ros::AsyncSpinner> spinner_;
 };
 
@@ -461,10 +468,16 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     if (!rosPublishingEnabled_) {
       return true;
     }
-    // Native worlds need the user data-plane ROS node, without the retired
-    // gazebo_ros_api_plugin control bus. ROS remains a process-wide data runtime.
+    rosDataRuntime_ = CameraROSDataRuntime::Acquire();
+    rosRegistration_ = std::make_unique<xgc2_gazebo_scene::RosMasterRegistration>([this] {
+      if (!RegisterROSPublisher()) throw std::runtime_error("camera ROS registration failed");
+    });
+    return true;
+  }
+
+  bool RegisterROSPublisher() {
     try {
-      rosDataRuntime_ = CameraROSDataRuntime::Acquire();
+      rosDataRuntime_->Start();
       rosNode_ = std::make_unique<ros::NodeHandle>();
       rosNode_->setCallbackQueue(&rosDataRuntime_->queue);
       rosCameraInfoPublisher_ = rosNode_->advertise<sensor_msgs::CameraInfo>(rosCameraInfoTopic_, 1, true);
@@ -512,26 +525,24 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
       rosPublisherCondition_.notify_one();
       return true;
     } catch (const std::exception &error) {
-      gzwarn << "xgc_media_camera could not start its ROS publisher: "
-             << error.what() << "\n";
+      // The shared master watcher summarizes registration failures.
       rosVideoPublisher_.shutdown();
       rosFrameTimingPublisher_.shutdown();
       rosStreamInfoPublisher_.shutdown();
       rosCameraInfoPublisher_.shutdown();
       rosNode_.reset();
-      rosDataRuntime_.reset();
       {
         std::lock_guard<std::mutex> lock(rosConsumerMutex_);
         rosSubscriberCallbacksEnabled_ = false;
         rosSubscriberConnectionCount_ = 0;
         rosConsumersActive_.store(false);
       }
-      rosPublishingEnabled_ = false;
       return false;
     }
   }
 
   void StopROSPublisher() {
+    rosRegistration_.reset();
     {
       std::lock_guard<std::mutex> lock(rosPublisherMutex_);
       rosPublisherStopping_ = true;
@@ -1168,6 +1179,11 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
     result["event_revision"] = Json::UInt64(controlEventRevision_);
     result["pending"] = bool(pendingControl_);
     if (nextControlReceipt_ > 0) result["last_receipt"] = controlReceipts_[(nextControlReceipt_ - 1) % controlReceipts_.size()];
+    const auto master = xgc2_gazebo_scene::CurrentRosMasterStatus();
+    result["ros_master"]["state"] = master.state;
+    result["ros_master"]["uri"] = master.uri;
+    result["ros_master"]["run_id"] = master.run_id;
+    result["ros_master"]["pid"] = master.pid;
     result["ros_consumers_active"] = rosConsumersActive_.load();
     result["native_sensor_active"] = nativeSensorActive_.load();
     result["rtp_requested_active"] = desiredActive_.load();
@@ -2898,6 +2914,7 @@ class XGCMediaCameraPlugin final : public SensorPlugin, private Ogre::RenderTarg
   mutable std::mutex rosPublisherMutex_;
   std::condition_variable rosPublisherCondition_;
   std::deque<QueuedROSFrame> rosFrameQueue_;
+  std::unique_ptr<xgc2_gazebo_scene::RosMasterRegistration> rosRegistration_;
   std::thread rosPublisherThread_;
   bool rosPublisherStopping_ = false;
   bool rosStreamInfoPending_ = false;

@@ -5,7 +5,7 @@
       "id": "gazebo-static-camera",
       "version": "1.5.0",
       "label": "Gazebo fixed-site RGB camera",
-      "description": "Adds the managed 3840x2160 30 fps 110-degree H264 camera to the currently running Gazebo Classic scene. One encoded access unit is fanned out to loopback RTP for paired XGC media-edge browser preview and to an asynchronous ROS encoded-video publisher for scientific recording.",
+      "description": "Adds the managed 3840x2160 30 fps 110-degree H264 camera to the allocated Gazebo Classic scene, tolerating parallel startup. One encoded access unit is fanned out to loopback RTP for paired XGC media-edge browser preview and to an asynchronous ROS encoded-video publisher for scientific recording.",
       "parameters": {
         "groups": [
           {
@@ -129,7 +129,7 @@
           },
           "mediaControlEndpoint": {
             "type": "string",
-            "description": "Explicit Unix control socket of the paired media-edge service."
+            "description": "Pre-allocated Unix source-control socket bound by the camera plugin."
           },
           "world": {
             "type": "string",
@@ -138,7 +138,7 @@
           },
           "simulationServiceRefJson": {
             "type": "json",
-            "description": "Instance-pinned simulation-v1 HTTP ServiceRef of the running world."
+            "description": "Pre-allocated simulation-v1 HTTP ServiceRef; the camera owner discovers the bound world instance at its endpoint."
           },
           "targetId": {
             "type": "string",
@@ -146,7 +146,7 @@
           },
           "mediaControlTargetId": {
             "type": "string",
-            "description": "Explicit local target identity of the paired media-edge service."
+            "description": "Explicit local target identity granted to camera source control."
           },
           "pythonExecutable": {
             "type": "string",

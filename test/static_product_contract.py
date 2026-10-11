@@ -74,7 +74,7 @@ assert '"/v1/describe?wait_ready_ms=1000"' in native_camera_test
 assert 'facts = discovered["facts"]' in native_camera_test
 assert 'ServiceRef.from_dict(facts["service_ref"])' in native_camera_test
 assert 'description["facts"]["sources"]' in camera_contract
-assert 'reference = description["facts"]["service_ref"]' in camera_contract
+assert 'reference = ServiceRef.from_dict' in (root / "scripts/camera_peer.py").read_text()
 assert 'instance_id=description["instance_id"]' in camera_contract_test
 assert "rejectDupKeys" in control_host
 assert "ReadControlLine" not in media_plugin
@@ -193,7 +193,7 @@ assert '<param name="expected_jpeg_backend" value="nvjpeg-cuda"/>' in hardware_c
 assert '<param name="expect_jpeg_fallback" value="false"/>' in hardware_contract
 assert "CompressedImage" not in camera_contract
 assert "_publish_media_snapshot" not in camera_contract
-assert "self._apply_camera_info_metadata()" in camera_contract
+assert '"camera-source", self._apply_camera_info_metadata' in camera_contract
 assert "CameraInfo()" not in camera_contract
 assert "expected_revision" in camera_contract
 assert "calibration-metadata" in camera_contract

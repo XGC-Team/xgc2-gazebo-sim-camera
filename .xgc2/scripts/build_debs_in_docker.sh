@@ -37,7 +37,8 @@ docker run --rm \
     apt-get install -y --no-install-recommends \
       libxgc2-xrpc-dev \
       ros-noetic-xgc2-camera-msgs \
-      ros-noetic-xgc2-gazebo-sim-worlds
+      ros-noetic-xgc2-gazebo-sim-worlds \
+      ros-noetic-xgc2-gazebo-scene
     rm -rf /workspace/work/src /workspace/work/build /workspace/work/devel /workspace/work/install-root
     mkdir -p /workspace/work/src/gazebo-camera
     rsync -a --delete /workspace/repo/ /workspace/work/src/gazebo-camera/
