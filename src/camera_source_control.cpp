@@ -1,4 +1,5 @@
 #include "camera_source_control.h"
+#include <xgc2/xrpc/http.hpp>
 
 #include <algorithm>
 #include <stdexcept>
@@ -81,15 +82,17 @@ std::shared_ptr<CameraSourceControlHost> CameraSourceControlHost::Acquire(
 CameraSourceControlHost::CameraSourceControlHost(const std::string &path,
     const std::string &target_id, const std::string &instance_id) : path_(path), target_id_(target_id),
     instance_id_(instance_id.empty() ? xgc2::xrpc::new_instance_id() : instance_id) {
-  limits_.connections = 8;
-  limits_.inflight = 4;
-  limits_.header_bytes = 8192;
-  limits_.request_bytes = 65536;
-  limits_.response_bytes = 64U << 20U;
-  limits_.request_timeout = std::chrono::seconds(10);
-  limits_.header_timeout = std::chrono::seconds(5);
-  limits_.idle_timeout = std::chrono::seconds(5);
-  limits_.shutdown_timeout = std::chrono::seconds(1);
+  xgc2::xrpc::HttpLimits limits;
+  limits.connections = 8;
+  limits.inflight = 4;
+  limits.header_bytes = 8192;
+  limits.request_bytes = 65536;
+  limits.response_bytes = 64U << 20U;
+  limits.request_timeout = std::chrono::seconds(10);
+  limits.header_timeout = std::chrono::seconds(5);
+  limits.idle_timeout = std::chrono::seconds(5);
+  limits.shutdown_timeout = std::chrono::seconds(1);
+  limits_ = std::make_unique<const xgc2::xrpc::HttpLimits>(limits);
   xgc2::xrpc::UnixOptions endpoint;
   endpoint.path = path;
   server_ = std::make_unique<xgc2::xrpc::HttpServer>(endpoint,
@@ -98,7 +101,7 @@ CameraSourceControlHost::CameraSourceControlHost(const std::string &path,
         auto state = std::make_shared<ControlReply::State>();
         state->reply = reply;
         Dispatch(std::move(domain), ControlReply(std::move(state)));
-      }, limits_,
+      }, *limits_,
       xgc2::xrpc::HttpIdentity{instance_id_, {"/v1/describe"}});
   server_->set_wakeup_handler([this] { FlushSources(); });
   executor_ = std::thread([this] {
@@ -163,18 +166,39 @@ void CameraSourceControlHost::Dispatch(ControlRequest request,
   try {
     const auto input = ParseControlJSON(request.body);
     std::lock_guard<std::mutex> lock(sources_mutex_);
-    if (request.method == "GET" && (request.target == "/v1/describe" || request.target == "/v1/media/sources")) {
+    const auto query_at = request.target.find('?');
+    const auto path = request.target.substr(0, query_at);
+    const bool describe = request.method == "GET" && path == "/v1/describe";
+    if (describe && query_at != std::string::npos) {
+      const auto query = request.target.substr(query_at + 1);
+      const std::string key = "wait_ready_ms=";
+      const auto digits = query.compare(0, key.size(), key) == 0 ? query.substr(key.size()) : "";
+      if (digits.empty() || digits.size() > 5 || (digits.size() > 1 && digits[0] == '0') ||
+          digits.find_first_not_of("0123456789") != std::string::npos || std::stoi(digits) > 30000)
+        throw std::invalid_argument("describe takes only wait_ready_ms=<0..30000>");
+    }
+    if (describe || (request.method == "GET" && request.target == "/v1/media/sources")) {
       if (!input.empty()) throw std::invalid_argument("discovery does not accept a body");
       Json::Value result;
-      if (request.target == "/v1/describe") result["service_ref"] = ServiceRef();
-      result["sources"] = Json::Value(Json::arrayValue);
-      for (const auto &source : sources_) if (!source.id.empty()) result["sources"].append(source.id);
-      result["limits"]["sources"] = Json::UInt(kSources);
-      result["limits"]["concurrent_captures"] = 1;
-      result["limits"]["connections"] = Json::UInt64(limits_.connections);
-      result["limits"]["inflight"] = Json::UInt64(limits_.inflight);
-      result["limits"]["request_bytes"] = Json::UInt64(limits_.request_bytes);
-      result["limits"]["response_bytes"] = Json::UInt64(limits_.response_bytes);
+      if (describe) {
+        result["service"] = "camera-source";
+        result["api_version"] = "v1";
+        result["instance_id"] = instance_id_;
+        // Serving is readiness for this shared host, even with an empty roster.
+        // Every valid wait is already satisfied; HttpReply completes on this executor.
+        result["ready"] = true;
+        result["facts"]["target_id"] = target_id_;
+        result["facts"]["service_ref"] = ServiceRef();
+      }
+      auto &facts = describe ? result["facts"] : result;
+      facts["sources"] = Json::Value(Json::arrayValue);
+      for (const auto &source : sources_) if (!source.id.empty()) facts["sources"].append(source.id);
+      facts["limits"]["sources"] = Json::UInt(kSources);
+      facts["limits"]["concurrent_captures"] = 1;
+      facts["limits"]["connections"] = Json::UInt64(limits_->connections);
+      facts["limits"]["inflight"] = Json::UInt64(limits_->inflight);
+      facts["limits"]["request_bytes"] = Json::UInt64(limits_->request_bytes);
+      facts["limits"]["response_bytes"] = Json::UInt64(limits_->response_bytes);
       reply.complete(JSONResponse(result));
       return;
     }

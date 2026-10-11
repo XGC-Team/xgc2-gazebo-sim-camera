@@ -96,13 +96,12 @@ def run(args):
                 models.append(f'''<model name="camera_{source}"><static>true</static><pose>0 {index} 2 0 0 0</pose>
 <link name="link"><sensor name="sensor" type="camera"><always_on>false</always_on><update_rate>10</update_rate>
 <camera><horizontal_fov>1.1</horizontal_fov><image><width>320</width><height>180</height><format>R8G8B8</format></image><clip><near>0.1</near><far>100</far></clip></camera>
-<plugin name="xgc_media_camera" filename="{Path(args.plugin).resolve()}"><sourceId>{source}</sourceId><controlEndpoint>{endpoint}</controlEndpoint><controlInstanceId>native-camera-fixture</controlInstanceId><controlTargetId>native-camera-test</controlTargetId><rosPublishEnabled>{str(args.ros_calibration and source == "world").lower()}</rosPublishEnabled><rosCameraInfoTopic>/xgc/native_fixture/camera_info</rosCameraInfoTopic><rtpPort>{18004+index*2}</rtpPort><snapshotJpegBackend>cpu</snapshotJpegBackend></plugin>
+<plugin name="xgc_media_camera" filename="{Path(args.plugin).resolve()}"><sourceId>{source}</sourceId><controlEndpoint>{endpoint}</controlEndpoint><controlInstanceId>0123456789abcdef0123456789abcdef</controlInstanceId><controlTargetId>native-camera-test</controlTargetId><rosPublishEnabled>{str(args.ros_calibration and source == "world").lower()}</rosPublishEnabled><rosCameraInfoTopic>/xgc/native_fixture/camera_info</rosCameraInfoTopic><rtpPort>{18004+index*2}</rtpPort><snapshotJpegBackend>cpu</snapshotJpegBackend></plugin>
 </sensor></link></model>''')
             world = root / "camera.world"
             world.write_text('<sdf version="1.6"><world name="camera_test"><physics type="ode"><max_step_size>0.01</max_step_size><real_time_update_rate>100</real_time_update_rate></physics><scene><ambient>0.8 0.8 0.8 1</ambient><background>0.3 0.1 0.6 1</background></scene>' + ''.join(models) + '</world></sdf>')
             environment = dict(isolated_environment, DISPLAY=":" + display, LIBGL_ALWAYS_SOFTWARE="1",
-                               GAZEBO_MASTER_URI=f"http://127.0.0.1:{master_port}", GAZEBO_LOG_PATH=str(root / "logs"),
-                               XGC2_XRPC_HOST_MAX_CONNECTIONS="6")
+                               GAZEBO_MASTER_URI=f"http://127.0.0.1:{master_port}", GAZEBO_LOG_PATH=str(root / "logs"))
             if args.ros_calibration:
                 environment["ROS_MASTER_URI"] = os.environ["ROS_MASTER_URI"]
             with log.open("wb") as output:
@@ -114,21 +113,23 @@ def run(args):
                 if gazebo.poll() is not None:
                     raise RuntimeError("isolated Gazebo exited: " + log.read_text()[-4000:])
                 try:
-                    discovered = discovery.json("/v1/describe", method="GET", timeout=1)
-                    if len(discovered.get("sources", [])) == 2:
+                    discovered = discovery.json("/v1/describe?wait_ready_ms=1000", method="GET", timeout=2)
+                    if discovered["ready"] and len(discovered["facts"]["sources"]) == 2:
                         break
                 except (TransportError, OSError):
                     pass
                 if time.monotonic() > deadline:
                     raise RuntimeError("camera source discovery timed out: " + log.read_text()[-5000:])
                 time.sleep(0.1)
-            assert set(discovered["sources"]) == {"front", "world"}, discovered
-            client = Client.from_service(ServiceRef.from_dict(discovered["service_ref"]), runtime=runtime, local_target="native-camera-test")
-            policy = client.json("/v1/runtime-policy", method="GET")
-            fields = {field["name"]: field for field in policy["fields"]}
-            assert fields["HOST_MAX_CONNECTIONS"]["value"] == discovered["limits"]["connections"] == 6
-            assert fields["HOST_MAX_CONNECTIONS"]["source"] == "environment", fields["HOST_MAX_CONNECTIONS"]
-            assert fields["HOST_MAX_CONNECTIONS"]["ceiling"] == 8
+            assert discovered["service"] == "camera-source" and discovered["api_version"] == "v1"
+            assert discovered["ready"] is True
+            facts = discovered["facts"]
+            assert facts["target_id"] == "native-camera-test"
+            assert facts["service_ref"]["instance_id"] == discovered["instance_id"]
+            assert set(facts["sources"]) == {"front", "world"}, discovered
+            assert facts["limits"] == {"sources": 16, "concurrent_captures": 1, "connections": 8,
+                                      "inflight": 4, "request_bytes": 65536, "response_bytes": 67108864}
+            client = Client.from_service(ServiceRef.from_dict(facts["service_ref"]), runtime=runtime, local_target="native-camera-test")
             route = "/v1/media/sources/world"
             status = client.json(route + "/status", method="GET")
             descriptor = client.json(route + "/describe", method="GET")
@@ -178,11 +179,11 @@ def run(args):
                 assert len(metadata["cameraMatrix"]) == 9 and "renderPose" in metadata
                 frames.append(metadata["timestampNanoseconds"])
             assert frames[1] > frames[0], frames
-            result = {"engine": "Gazebo Classic", "sources": discovered["sources"], "applied_revision": stopped["applied_revision"],
-                      "effective_policy": policy, "process": {"pid": gazebo.pid, "executable": str(Path(args.gzserver).resolve()),
+            result = {"engine": "Gazebo Classic", "sources": facts["sources"], "applied_revision": stopped["applied_revision"],
+                      "http_limits": facts["limits"], "process": {"pid": gazebo.pid, "executable": str(Path(args.gzserver).resolve()),
                           "command": [args.gzserver, "--verbose", str(world)], "rootfs": "native host", "display": ":" + display,
                           "xvfb_pid": xvfb.pid, "wayland_display": None, "gzclient": False},
-                      "capture_source_times_ns": frames, "gates": ["effective-runtime-policy", "CAS", "unknown-field", "persist-rejection", "native-render-ack", "receipt", "event-observe", "old-route-removed", "same-frame-multipart", "fresh-capture"]}
+                      "capture_source_times_ns": frames, "gates": ["describe-envelope", "unbound-readiness", "explicit-http-limits", "CAS", "unknown-field", "persist-rejection", "native-render-ack", "receipt", "event-observe", "old-route-removed", "same-frame-multipart", "fresh-capture"]}
             if args.ros_calibration:
                 calibration = {"scope": "calibration-metadata", "model": "plumb_bob", "width": 320,
                     "height": 180, "camera_matrix": [123.,0.,159.5,0.,124.,89.5,0.,0.,1.], "distortion": [.01,0.,0.,0.,0.]}

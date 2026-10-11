@@ -34,8 +34,12 @@ class CameraContractTest(unittest.TestCase):
             while time.monotonic() < deadline and not rospy.is_shutdown():
                 try:
                     description = discovery.json("/v1/describe", method="GET", timeout=2)
+                    self.assertEqual(description["service"], "camera-source")
+                    self.assertEqual(description["api_version"], "v1")
+                    self.assertTrue(description["ready"])
+                    self.assertEqual(description["facts"]["service_ref"]["instance_id"], description["instance_id"])
                     client = Client(path, runtime=self._runtime,
-                                    instance_id=description["service_ref"]["instance_id"])
+                                    instance_id=description["instance_id"])
                     self._clients[path] = client
                     return client
                 except (OSError, TransportError):

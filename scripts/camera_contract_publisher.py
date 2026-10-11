@@ -313,14 +313,14 @@ class CameraContractPublisher:
             while True:
                 try:
                     description = discovery.json("/v1/describe", method="GET", timeout=1)
-                    if source_id in description.get("sources", []):
+                    if description["ready"] and source_id in description["facts"]["sources"]:
                         break
                 except (TransportError, OSError):
                     pass
                 if time.monotonic() >= deadline or rospy.is_shutdown():
                     raise RuntimeError("native camera source did not register before startup deadline")
                 time.sleep(0.05)
-            reference = description["service_ref"]
+            reference = description["facts"]["service_ref"]
             if reference["service"] != "camera-source" or reference["api_version"] != "v1" or reference["endpoint"]["address"] != endpoint:
                 raise RuntimeError("camera source ServiceRef does not match authored binding")
             client = Client.from_service(ServiceRef.from_dict(reference), runtime=runtime, local_target=target_id)

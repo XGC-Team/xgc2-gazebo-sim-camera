@@ -20,6 +20,8 @@ media_plugin = (root / "src/xgc_media_camera_plugin.cpp").read_text(
     encoding="utf-8"
 )
 control_host = (root / "src/camera_source_control.cpp").read_text(encoding="utf-8")
+native_camera_test = (root / "test/native_camera_xrpc.py").read_text(encoding="utf-8")
+camera_contract_test = (root / "scripts/camera_contract_test.py").read_text(encoding="utf-8")
 cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
 docker_build = (root / ".xgc2/scripts/build_debs_in_docker.sh").read_text(
     encoding="utf-8"
@@ -40,6 +42,28 @@ assert "args=\"0.067 0 0 -1.5707963267948966 0 -1.5707963267948966" in launch
 assert '#include "camera_source_control.h"' in media_plugin
 assert "CameraSourceControlHost::Acquire" in media_plugin
 assert "xgc2::xrpc::HttpServer" in control_host
+assert "xgc2::xrpc::HttpLimits limits;" in control_host
+assert 'xgc2::xrpc::HttpIdentity{instance_id_, {"/v1/describe"}}' in control_host
+assert "request.target.substr(0, query_at)" in control_host
+assert 'path == "/v1/describe"' in control_host
+assert 'const std::string key = "wait_ready_ms=";' in control_host
+assert "std::stoi(digits) > 30000" in control_host
+for field, value in (
+    ("service", '"camera-source"'),
+    ("api_version", '"v1"'),
+    ("instance_id", "instance_id_"),
+    ("ready", "true"),
+):
+    assert f'result["{field}"] = {value};' in control_host
+assert 'result["facts"]["target_id"] = target_id_;' in control_host
+assert 'result["facts"]["service_ref"] = ServiceRef();' in control_host
+assert 'describe ? result["facts"] : result' in control_host
+assert '"/v1/describe?wait_ready_ms=1000"' in native_camera_test
+assert 'facts = discovered["facts"]' in native_camera_test
+assert 'ServiceRef.from_dict(facts["service_ref"])' in native_camera_test
+assert 'description["facts"]["sources"]' in camera_contract
+assert 'reference = description["facts"]["service_ref"]' in camera_contract
+assert 'instance_id=description["instance_id"]' in camera_contract_test
 assert "rejectDupKeys" in control_host
 assert "ReadControlLine" not in media_plugin
 assert not (root / "src/unix_control_socket.h").exists()
