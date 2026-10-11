@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import importlib.util
+import sys
 import unittest
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from sensor_msgs.msg import Image
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/drive_intrinsic_calibration.py"
+sys.path.insert(0, str(SCRIPT.parent))
 SPEC = importlib.util.spec_from_file_location("drive_intrinsic_calibration", str(SCRIPT))
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)

@@ -95,11 +95,12 @@ class CameraIntrinsicSelectionTest(unittest.TestCase):
 
     def test_accepts_complete_matching_timestamped_document(self):
         self.write(_document())
-        camera_matrix, distortion = MODULE._selected_intrinsics(
+        camera_matrix, distortion, model = MODULE._selected_intrinsics(
             str(self.file), (3840, 2160), "usb_cam"
         )
         self.assertEqual(len(camera_matrix), 9)
         self.assertEqual(len(distortion), 5)
+        self.assertEqual(model, "plumb_bob")
 
     def test_rejects_invalid_camera_name_before_using_the_path(self):
         self.write(_document())
