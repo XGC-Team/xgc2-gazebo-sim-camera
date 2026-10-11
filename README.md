@@ -81,9 +81,19 @@ The optical-frame joint uses the REP-103 rotation
 `rpy=(-pi/2, 0, -pi/2)`. A second instance must use a distinct model name,
 source ID, RTP port, camera-link frame, and optical frame. All sensors in one world share the same XRPC endpoint.
 
-The native source service uses the official XRPC SDK. Discover the bounded
-source registry with `GET /v1/media/sources`, then use its fenced ServiceRef
-for source status, start/stop, configuration, keyframe and same-frame capture.
+The native `camera-source` service uses the official XRPC 0.2.0 SDK. Unbound
+`GET /v1/describe` returns
+`{"service":"camera-source","api_version":"v1","instance_id":"<hex>","ready":true,"facts":{...}}`.
+The optional `wait_ready_ms=<0..30000>` query is also unbound and completes
+asynchronously when ready or when the requested wait elapses. This shared host
+is ready whenever it serves, including with no sources, so valid waits answer
+immediately. Only this query with a canonical decimal integer is accepted;
+other queries and out-of-range values return 400 `invalid_argument`.
+`facts` contains `target_id`, the registered source IDs in `sources`, `limits`
+and the complete `service_ref`. Limits are 16 sources, one concurrent capture,
+eight connections, four in-flight calls, 65536 request bytes and 67108864
+response bytes. Bind the returned ServiceRef for `GET /v1/media/sources` and
+source status, start/stop, configuration, keyframe and same-frame capture.
 The exact routes, revision/receipt semantics and resource/storage limits are
 specified in [source_control.md](docs/source_control.md). The old JSON-line
 socket operations have been removed.
@@ -225,9 +235,10 @@ pose.
 The XGC2 central process catalog, not this product, owns ProcessDefinition
 `gazebo-static-camera`. It exposes `cameraProfile` as an enum synchronized with
 the checked-in YAML. Model/frame identity, source ID, RTP port, control endpoint,
-pose, and TF mode remain ordinary process parameters. Readiness uses native
-source lifecycle and applied receipts on its private XRPC endpoint. This Debian package does
-not install files under `/usr/share/xgc2/process-definitions`.
+pose, and TF mode remain ordinary process parameters. Service readiness is
+reported by unbound `GET /v1/describe` on its private XRPC endpoint; native
+source membership and applied receipts describe each sensor's lifecycle. This
+Debian package does not install files under `/usr/share/xgc2/process-definitions`.
 
 ## Test and package
 

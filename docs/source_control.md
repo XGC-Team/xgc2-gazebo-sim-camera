@@ -7,9 +7,51 @@ and `controlTargetId`, and the same optional `controlInstanceId`. There is no
 endpoint or hostname identity fallback. The endpoint's owned parent directory
 must already exist with mode 0700; the SDK owns the 0600 socket and lease.
 
-GET `/v1/describe` is the sole unfenced service discovery route. It returns the
-complete `camera-source` ServiceRef and source roster. GET `/v1/media/sources`
-is a bound metadata roster. All domain calls use the SDK instance fence.
+GET `/v1/describe` is the sole unbound service discovery route. It returns:
+
+```json
+{
+  "service": "camera-source",
+  "api_version": "v1",
+  "instance_id": "<hex>",
+  "ready": true,
+  "facts": {
+    "target_id": "<target>",
+    "sources": ["<sourceId>"],
+    "limits": {
+      "sources": 16,
+      "concurrent_captures": 1,
+      "connections": 8,
+      "inflight": 4,
+      "request_bytes": 65536,
+      "response_bytes": 67108864
+    },
+    "service_ref": {
+      "target_id": "<target>",
+      "service": "camera-source",
+      "api_version": "v1",
+      "instance_id": "<hex>",
+      "profile": "http.v1",
+      "endpoint": {"kind": "unix", "address": "<granted-socket-path>"}
+    }
+  }
+}
+```
+
+The optional query `wait_ready_ms=<0..30000>` holds an asynchronous reply until
+ready or the requested wait elapses, then returns the current envelope. This
+shared host is ready whenever it serves, even before any source registers or
+after all sources unregister. Its valid readiness waits are therefore already
+satisfied and complete immediately on the single HTTP executor, without a
+readiness polling loop. The value must be a canonical decimal integer; empty,
+signed, fractional, duplicate, extra or out-of-range query values return 400
+`invalid_argument`.
+
+XRPC matches discovery on the GET target's path before `?`, and preserves the
+query for host validation. A readiness query never requires an instance header.
+Consumers read the existing ServiceRef from `facts.service_ref` and bind it for
+domain calls. GET `/v1/media/sources` keeps its bound `{sources, limits}` metadata
+roster. All domain calls use the SDK instance fence.
 The final source prefix is `/v1/media/sources/{sourceId}`:
 
 | Method and suffix | Body | Result |
@@ -76,10 +118,11 @@ and GET `/observe/{event_revision}` (four held observers). Receipt expiry is
 desired/applied/persisted revisions, stage and effects.applied. Failed native
 work never returns a completed receipt.
 
-The formal SDK RuntimePolicy is resolved once from XGC2_XRPC_ settings and
-passed to the HTTP host. GET `/v1/runtime-policy` reports values, sources and
-ceilings. Defaults/ceilings are eight connections, four in-flight calls, 64 KiB
-requests and 64 MiB responses; smaller explicit values apply. One global capture
+The XRPC 0.2.0 host receives an explicit `HttpLimits` struct: eight connections,
+four in-flight calls, 8192 header bytes, 64 KiB requests, 64 MiB responses, a
+10-second call timeout, 5-second header and idle timeouts, and a 1-second shutdown
+timeout. These bounds are fixed by the host; environment variables do not change
+them. The envelope's transport limits come from that same struct. One global capture
 reservation stays owned through cancellation/removal until submitted work ends.
 Capture geometry is at most 4096×2160, JPEG 32 MiB, RGB 26,542,080 bytes and the
 capture budget four seconds. Native render callbacks receive typed records;
@@ -96,8 +139,10 @@ launch processes. Source effects remain ephemeral; captures are retained by
 media/archive owners rather than written by this plugin.
 
 The engine compilation unit stays C++17; the SDK facade is C++20. Existing
-isolated evidence covers fresh native JPEG/RGB, actual ROS CameraInfo and
-RuntimePolicy application under Classic 11.15.1/GCC13. The final contract and
+isolated evidence covers fresh native JPEG/RGB and actual ROS CameraInfo
+under Classic 11.15.1/GCC13. The standalone control-host unit test covers the
+XRPC 0.2.0 envelope, unbound readiness queries, fixed limits and source registry.
+The final native contract and
 new NVENC start/IDR/drain gates have only static compilation since the user's
 native-test hard stop. Hardware NVENC, final cross-product interoperability,
 Focal ABI/packages and deployed workflows have not been certified.
