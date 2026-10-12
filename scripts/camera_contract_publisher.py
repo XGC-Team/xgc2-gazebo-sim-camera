@@ -13,7 +13,7 @@ if sys.version_info < (3, 8):
     raise RuntimeError("the selected camera interpreter must provide Python >= 3.8 and the formal XRPC wheel")
 import re
 import threading
-import time
+import uuid
 from pathlib import Path
 
 import rospy
@@ -218,19 +218,25 @@ class CameraContractPublisher:
         self._optical_rotation = quaternion_from_euler(-math.pi / 2.0, 0.0, -math.pi / 2.0)
 
         self._pose_lock = threading.Lock()
-        self._application = None
+        self._frozen = None
+        self._facts = None
         frozen_json = str(rospy.get_param("~resolved_extrinsic_json", ""))
         if frozen_json:
-            from xgc_camera_calibration.extrinsic_application import ExtrinsicApplication, parse_frame_roles
+            from xgc_camera_calibration.extrinsic_application import parse_frame_roles
+            from xgc_camera_calibration.extrinsic_resolver import decode_frozen
+            from xgc_camera_calibration.record_facts import AppliedTransformFacts
+            from std_msgs.msg import String
             roles = parse_frame_roles(rospy.get_param("~frame_roles_json"))
             if self._parent_frame != roles["parentFrame"] or self._optical_frame != roles["opticalFrames"]["sim"]:
                 raise ValueError("Gazebo output frames do not match the controlled camera roles")
-            self._application = ExtrinsicApplication(
-                str(rospy.get_param("~calibration_root")), rospy.get_param("~camera_name"),
-                frozen_json, roles,
-                lambda state: rospy.set_param("~extrinsic_application_state", state))
-            if self._application.frozen["status"] != "uncalibrated":
-                self._set_frozen_estimate(self._application.frozen)
+            self._frozen = decode_frozen(frozen_json, rospy.get_param("~camera_name"), roles)
+            if self._frozen["status"] != "uncalibrated":
+                self._set_frozen_estimate(self._frozen)
+            self._fact_publisher = rospy.Publisher(AppliedTransformFacts.TOPIC, String, queue_size=64, latch=True)
+            self._facts = AppliedTransformFacts({"id": rospy.get_param("~camera_name") + ":world:" + self._optical_frame,
+                "instanceId": uuid.uuid4().hex, "kind": "camera-extrinsic", "resolutionId": self._frozen["resolutionId"]},
+                lambda text: self._fact_publisher.publish(String(data=text)),
+                lambda message: rospy.logwarn_throttle(5.0, message))
         # Non-calibrating standalone/intrinsic camera launches retain their
         # explicit spawn pose and have no selection consumer at all.
 
@@ -245,9 +251,6 @@ class CameraContractPublisher:
         # CameraInfo comes from the selected calibration file when supplied;
         # it is never inferred from image transport metadata.
         self._publish_transforms()
-        if self._application is not None:
-            self._application.initial_published()
-            rospy.on_shutdown(self._close_application)
         self._media_peer = CameraPeer(rospy.get_param("~media_control_endpoint"),
             rospy.get_param("~media_control_target_id"), "camera-source", self._apply_camera_info_metadata)
         self._transform_thread = threading.Thread(target=self._transform_loop, daemon=True)
@@ -262,48 +265,19 @@ class CameraContractPublisher:
             self._translation = chain["parent_t_link"]
             self._pose_rotation = chain["parent_q_link_xyzw"]
 
-    def _apply_estimate(self, frozen):
-        # This changes only the TF estimate. It never sends Gazebo model state
-        # or changes the spawn arguments / physical truth camera.
-        with self._pose_lock:
-            previous = (self._translation, self._pose_rotation)
-        self._set_frozen_estimate(frozen)
-        try:
-            self._publish_transforms()
-        except Exception:
-            with self._pose_lock:
-                self._translation, self._pose_rotation = previous
-            raise
-
-    def _refresh_estimate(self):
-        if self._application is None:
-            return
-        try:
-            self._application.tick(self._apply_estimate)
-            rospy.set_param("~extrinsic_update_error", "")
-        except Exception as error:
-            rospy.set_param("~extrinsic_update_error", str(error))
-            rospy.logwarn_throttle(5.0, "Camera application is not confirmed: %s", error)
-
-    def _close_application(self):
-        self._application.ready = False
-        self._application.project(self._application.state())
-
     def _transform_loop(self):
-        # Wall time keeps save consumption alive when Gazebo /clock is paused.
-        next_refresh = 0.0
+        # Keep the frozen TF publication cadence independent of paused /clock.
         while not self._stop_event.wait(self._transform_period):
             if rospy.is_shutdown():
                 return
-            if time.monotonic() >= next_refresh:
-                self._refresh_estimate()
-                next_refresh = time.monotonic() + 1.0
             self._publish_transforms()
 
     def close(self):
         self._stop_event.set()
         self._media_peer.close()
         self._transform_thread.join()
+        if self._facts is not None:
+            self._facts.stop(rospy.Time.now().to_nsec())
 
     def _apply_camera_info_metadata(self, client, description, stop):
         source_id = _stable_camera_name(rospy.get_param("~media_source_id"))
@@ -333,7 +307,7 @@ class CameraContractPublisher:
         stamp = rospy.Time.now()
         with self._pose_lock:
             translation, rotation = self._translation, self._pose_rotation
-        self._transform_publisher.publish(TFMessage(transforms=[
+        transforms = [
             _transform(
                 self._parent_frame,
                 self._camera_link_frame,
@@ -348,7 +322,11 @@ class CameraContractPublisher:
                 self._optical_rotation,
                 stamp,
             ),
-        ]))
+        ]
+        self._transform_publisher.publish(TFMessage(transforms=transforms))
+        if self._facts is not None:
+            from xgc_camera_calibration.record_facts import transform_values
+            self._facts.applied(transform_values(transforms), self._frozen, stamp.to_nsec())
 
 
 def main():

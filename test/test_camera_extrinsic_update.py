@@ -1,4 +1,4 @@
-"""Saved estimates only update XGC TF; they never move Gazebo's truth camera."""
+"""Frozen estimates split optical pose once; publication owns no model movement."""
 import sys
 import threading
 import types
@@ -32,34 +32,24 @@ class CameraExtrinsicUpdateTest(unittest.TestCase):
         self.frozen = {'resolvedOpticalPose': {'translation': [2, 3, 4], 'quaternionXyzw': [0, 0, 0, 1]},
                        'targetCoordinates': {'worldOffset': [10, 20, 30]}}
 
-    def test_complete_tf_publish_precedes_application_confirmation(self):
-        def tick(apply):
-            self.assertEqual(self.sent, [])
-            apply(self.frozen)
-            self.assertEqual(self.sent, [(2, 3, 3.933)])
-        self.publisher._application = types.SimpleNamespace(tick=tick)
-        self.publisher._refresh_estimate()
+    def test_frozen_estimate_splits_the_model_owned_optical_offset_once(self):
+        self.publisher._set_frozen_estimate(self.frozen)
         self.transforms.split_parent_to_optical_pose.assert_called_once_with([2, 3, 4], [0, 0, 0, 1], (.067, 0., 0.))
-        self.assertEqual(self.params['~extrinsic_update_error'], '')
-        # No ROS service/model movement path is involved in the actual callback.
-        self.assertFalse(hasattr(self.publisher, '_model_state_client'))
-
-    def test_failed_publish_restores_estimate_and_cannot_confirm(self):
-        def fail(): raise OSError('TF transport failed')
-        self.publisher._publish_transforms = fail
-        def tick(apply):
-            apply(self.frozen)
-            self.fail('publish failure cannot reach confirmation')
-        self.publisher._application = types.SimpleNamespace(tick=tick)
-        self.publisher._refresh_estimate()
-        self.assertEqual(self.publisher._translation, (0, 0, 0))
-        self.assertEqual(self.params['~extrinsic_update_error'], 'TF transport failed')
-
-    def test_standalone_intrinsic_camera_has_no_global_selection_consumer(self):
-        self.publisher._application = None
-        self.publisher._refresh_estimate()
+        self.assertEqual(tuple(self.publisher._translation), (2, 3, 3.933))
         self.assertEqual(self.sent, [])
         self.assertEqual(self.params, {})
+        self.assertFalse(hasattr(self.publisher, '_model_state_client'))
+
+    def test_invalid_optical_pose_does_not_replace_the_existing_estimate(self):
+        self.transforms.split_parent_to_optical_pose.side_effect = ValueError('invalid optical pose')
+        with self.assertRaisesRegex(ValueError, 'invalid optical pose'):
+            self.publisher._set_frozen_estimate(self.frozen)
+        self.assertEqual(self.publisher._translation, (0, 0, 0))
+        self.assertEqual(self.params, {})
+
+    def test_publisher_has_no_retired_hot_selection_or_confirmation_callbacks(self):
+        for name in ('_refresh_estimate', '_apply_estimate', '_close_application'):
+            self.assertFalse(hasattr(self.publisher, name))
 
 
 if __name__ == '__main__': unittest.main()

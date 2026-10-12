@@ -5,10 +5,12 @@ import importlib.machinery
 import importlib.util
 import io
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import types
 import unittest
 from unittest.mock import patch
@@ -38,7 +40,7 @@ def normalized_xml(document):
 
 
 class PlacementTest(unittest.TestCase):
-    def invoke(self, arguments, failure=None):
+    def invoke(self, arguments, failure=None, acknowledged=None):
         calls = []
         package = types.ModuleType("xgc2_gazebo_scene")
         package.__path__ = []
@@ -49,6 +51,8 @@ class PlacementTest(unittest.TestCase):
             calls.append((endpoint, target_id, entity, timeout))
             if failure:
                 raise RuntimeError(failure)
+            if acknowledged is not None:
+                result.update(acknowledged(entity))
             return result, "1" * 32
 
         module.place_entity = place_entity
@@ -104,6 +108,74 @@ class PlacementTest(unittest.TestCase):
             self.assertAlmostEqual(actual, expected)
         self.assertGreater(remaining, 0)
         self.assertLess(remaining, 3)
+
+    def frozen_arguments(self, root, choice):
+        from xgc_camera_calibration.extrinsic_resolver import encode_frozen, resolve_selection
+        roles = {"parentFrame": "world", "opticalFrames": {
+            "sim": "xgc_world_camera_optical_frame", "phy": "usb_cam_optical_frame"}}
+        frozen = resolve_selection(root, "world", choice,
+            {"frame": "world", "worldOffset": [10, -3, 1]}, roles, "placement-test")
+        payload = encode_frozen(frozen)
+        return REQUIRED + ["--camera-name", "world", "--media-source-id", "world",
+            "--optical-frame", roles["opticalFrames"]["sim"],
+            "--resolved-extrinsic-json", payload, "--frame-roles-json", json.dumps(roles)], frozen
+
+    @staticmethod
+    def ready_entity(entity):
+        return {"entities": [{"ref": {"id": entity["id"], "generation": 7},
+                             "lifecycle": "ready", "state": {"pose": entity["pose"]}}]}
+
+    def test_uncalibrated_context_uses_acknowledged_pose_without_saving_calibration(self):
+        with tempfile.TemporaryDirectory() as root:
+            arguments, frozen = self.frozen_arguments(root, {"mode": "auto"})
+            def acknowledged(entity):
+                result = self.ready_entity(entity)
+                result["entities"][0]["state"]["pose"] = {
+                    "position": [7, 8, 9], "orientation": [0, 0, math.sin(math.pi/4), math.cos(math.pi/4)]}
+                return result
+            code, stdout, stderr, calls, _ = self.invoke(arguments, acknowledged=acknowledged)
+            self.assertEqual(code, 0, stderr)
+            context = json.loads(stdout)["cameraContext"]
+            self.assertEqual(json.loads(context["resolvedExtrinsicJson"]), frozen)
+            self.assertEqual(frozen["status"], "uncalibrated")
+            self.assertNotIn("resolvedOpticalPose", frozen)
+            self.assertEqual(context["appliedLinkPose"]["x"], 7)
+            self.assertAlmostEqual(context["appliedOpticalPose"]["translation"][1], 8.067)
+            self.assertEqual(context["cameraInfoTopic"], "/xgc/camera/world/camera_info")
+            self.assertNotIn("imageTopic", context)
+            self.assertNotIn("applicationStateParam", context)
+            self.assertEqual(len(calls), 1)
+            self.assertFalse((Path(root) / "selections").exists())
+
+    def test_selected_optical_pose_rebases_once_and_places_matching_camera_link(self):
+        from xgc_camera_calibration.transforms import quaternion_to_rotation_matrix, link_to_optical_rotation
+        with tempfile.TemporaryDirectory() as root:
+            arguments, frozen = self.frozen_arguments(root, {"mode": "pose", "pose": {
+                "convention": "world_T_camera_optical", "translation": [2, -1, 3],
+                "quaternionXyzw": [0, 0, 0, 1], "coordinates": {"schemaVersion": 1,
+                "kind": "experiment-world", "frame": "world", "savedWorldOffset": [13, -5, 2]}}})
+            code, stdout, stderr, calls, _ = self.invoke(arguments, acknowledged=self.ready_entity)
+            self.assertEqual(code, 0, stderr)
+            context = json.loads(stdout)["cameraContext"]
+            self.assertEqual(json.loads(context["resolvedExtrinsicJson"]), frozen)
+            self.assertIn("appliedOpticalPose", context)
+            pose = calls[0][2]["pose"]
+            rotation = quaternion_to_rotation_matrix(pose["orientation"])
+            optical = rotation.dot((0.067, 0, 0)) + pose["position"]
+            for actual, expected in zip(optical, frozen["resolvedOpticalPose"]["translation"]):
+                self.assertAlmostEqual(actual, expected)
+            self.assertTrue((abs(rotation.dot(link_to_optical_rotation()) - quaternion_to_rotation_matrix(
+                frozen["resolvedOpticalPose"]["quaternionXyzw"])) < 1e-10).all())
+            self.assertFalse((Path(root) / "selections").exists())
+
+    def test_frozen_identity_drift_sends_nothing_and_invalid_acknowledgment_is_not_replayed(self):
+        with tempfile.TemporaryDirectory() as root:
+            arguments, _ = self.frozen_arguments(root, {"mode": "auto"})
+            code, stdout, _, calls, _ = self.invoke(arguments + ["--camera-name", "other"])
+            self.assertEqual((code, stdout, calls), (2, "", []))
+            code, stdout, stderr, calls, _ = self.invoke(arguments)
+            self.assertEqual((code, stdout, len(calls)), (1, "", 1))
+            self.assertIn("acknowledge", stderr)
 
     def test_validation_errors_send_nothing_and_have_one_diagnostic(self):
         cases = [REQUIRED[:-2]]

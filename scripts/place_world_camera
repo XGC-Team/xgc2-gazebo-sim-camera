@@ -37,6 +37,9 @@ def parse_arguments(argv):
     parser.add_argument("--media-control-endpoint", required=True, help="canonical absolute camera-source socket path")
     parser.add_argument("--media-control-target-id", required=True, help="camera-source target grant")
     parser.add_argument("--media-rtp-port", required=True, type=int, help="allocated RTP port, 1-65535")
+    parser.add_argument("--camera-name", default="")
+    parser.add_argument("--resolved-extrinsic-json", default="")
+    parser.add_argument("--frame-roles-json", default="")
     defaults = {
         "model_name": "gazebo_static_camera",
         "camera_link_frame": "usb_cam_link", "optical_frame": "usb_cam_optical_frame",
@@ -141,6 +144,51 @@ def camera_entity(args, document):
                 cr * cp * sy - sr * sp * cy, cr * cp * cy + sr * sp * sy]}}
 
 
+def apply_frozen_pose(args):
+    if not args.resolved_extrinsic_json:
+        return None
+    sys.path.append(ROS_PYTHON)
+    from xgc_camera_calibration.extrinsic_application import parse_frame_roles
+    from xgc_camera_calibration.extrinsic_resolver import decode_frozen
+    from xgc_camera_calibration.camera_initial_pose import gazebo_camera_link_pose_from_optical
+    roles = parse_frame_roles(args.frame_roles_json)
+    if roles["parentFrame"] != "world" or roles["opticalFrames"]["sim"] != args.optical_frame:
+        raise UsageError("camera placement frames differ from its frozen resolution")
+    frozen = decode_frozen(args.resolved_extrinsic_json, args.camera_name, roles)
+    if frozen["status"] != "uncalibrated":
+        pose = frozen["resolvedOpticalPose"]
+        for name, value in gazebo_camera_link_pose_from_optical(
+                pose["translation"], pose["quaternionXyzw"], (0.067, 0., 0.)).items():
+            setattr(args, name, value)
+    return frozen
+
+
+def camera_context(args, frozen, result):
+    from xgc_camera_calibration.transforms import (
+        link_to_optical_rotation, quaternion_to_rotation_matrix, rotation_matrix_to_rpy)
+    from xgc_camera_calibration.solver import rotation_matrix_to_quaternion
+    entities = result.get("entities", [])
+    if len(entities) != 1 or entities[0].get("ref", {}).get("id") != args.model_name or entities[0].get("lifecycle") != "ready":
+        raise UsageError("world did not acknowledge this camera's ready entity")
+    pose = entities[0]["state"]["pose"]
+    rotation = quaternion_to_rotation_matrix(pose["orientation"])
+    roll, pitch, yaw = rotation_matrix_to_rpy(rotation)
+    link = dict(zip(("x", "y", "z", "roll", "pitch", "yaw"), list(pose["position"]) + [roll, pitch, yaw]))
+    context = {"id": args.media_source_id, "cameraId": args.media_source_id,
+               "cameraName": args.camera_name, "sourceId": args.media_source_id,
+               "cameraInfoTopic": args.xgc_camera_info_topic, "parentFrame": "world",
+               "opticalFrame": args.optical_frame, "frameRolesJson": args.frame_roles_json,
+               "resolvedExtrinsicJson": args.resolved_extrinsic_json, "appliedLinkPose": link}
+    # The acknowledged native pose remains separate from saved calibration.
+    # With an uncalibrated resolution this is only a temporary estimate.
+    context["appliedOpticalPose"] = {
+        "translation": [float(value + offset) for value, offset in
+                        zip(pose["position"], rotation.dot((0.067, 0., 0.)))],
+        "quaternionXyzw": rotation_matrix_to_quaternion(
+            rotation.dot(link_to_optical_rotation())).tolist()}
+    return context
+
+
 def main(argv=None):
     started = time.monotonic()
     contacted = False
@@ -149,6 +197,7 @@ def main(argv=None):
         # Keep rendering/import diagnostics out of the JSON output and turn
         # failures into one bounded diagnostic without a traceback.
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            frozen = apply_frozen_pose(args)
             document = render_camera(args, share)
             from xgc2_gazebo_scene.placement import place_entity
         remaining = args.timeout - (time.monotonic() - started)
@@ -157,8 +206,11 @@ def main(argv=None):
         contacted = True
         result, instance = place_entity(args.world_endpoint, args.target_id,
                                         camera_entity(args, document), remaining)
-        print(json.dumps({"schema": "xgc2.placement.v1", "kind": "camera", "id": args.model_name,
-                          "entity": result, "instance": instance}, separators=(",", ":"), allow_nan=False))
+        receipt = {"schema": "xgc2.placement.v1", "kind": "camera", "id": args.model_name,
+                   "entity": result, "instance": instance}
+        if frozen is not None:
+            receipt["cameraContext"] = camera_context(args, frozen, result)
+        print(json.dumps(receipt, separators=(",", ":"), allow_nan=False))
         return 0
     except Exception as error:
         reason = " ".join(str(error).split()) or type(error).__name__

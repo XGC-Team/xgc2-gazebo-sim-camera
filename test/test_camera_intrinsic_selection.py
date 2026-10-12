@@ -26,12 +26,14 @@ def _load_publisher_module():
         "tf.transformations": types.ModuleType("tf.transformations"),
         "tf2_msgs": types.ModuleType("tf2_msgs"),
         "tf2_msgs.msg": types.ModuleType("tf2_msgs.msg"),
+        "camera_peer": types.ModuleType("camera_peer"),
     }
     stubs["geometry_msgs.msg"].TransformStamped = object
     stubs["sensor_msgs.msg"].CameraInfo = object
     stubs["sensor_msgs.msg"].CompressedImage = object
     stubs["tf.transformations"].quaternion_from_euler = lambda *args: args
     stubs["tf2_msgs.msg"].TFMessage = object
+    stubs["camera_peer"].CameraPeer = object
     previous = {name: sys.modules.get(name) for name in stubs}
     sys.modules.update(stubs)
     try:
