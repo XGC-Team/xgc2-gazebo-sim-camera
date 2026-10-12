@@ -178,7 +178,8 @@ def camera_context(args, frozen, result):
                "cameraName": args.camera_name, "sourceId": args.media_source_id,
                "cameraInfoTopic": args.xgc_camera_info_topic, "parentFrame": "world",
                "opticalFrame": args.optical_frame, "frameRolesJson": args.frame_roles_json,
-               "resolvedExtrinsicJson": args.resolved_extrinsic_json, "appliedLinkPose": link}
+               "resolvedExtrinsicJson": args.resolved_extrinsic_json, "appliedLinkPose": link,
+               "entityRef": entities[0]["ref"]}
     # The acknowledged native pose remains separate from saved calibration.
     # With an uncalibrated resolution this is only a temporary estimate.
     context["appliedOpticalPose"] = {

@@ -140,6 +140,7 @@ class PlacementTest(unittest.TestCase):
             self.assertEqual(frozen["status"], "uncalibrated")
             self.assertNotIn("resolvedOpticalPose", frozen)
             self.assertEqual(context["appliedLinkPose"]["x"], 7)
+            self.assertEqual(context["entityRef"], {"id": "gazebo_static_camera", "generation": 7})
             self.assertAlmostEqual(context["appliedOpticalPose"]["translation"][1], 8.067)
             self.assertEqual(context["cameraInfoTopic"], "/xgc/camera/world/camera_info")
             self.assertNotIn("imageTopic", context)
