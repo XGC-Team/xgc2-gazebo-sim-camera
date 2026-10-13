@@ -27,9 +27,11 @@ def worker(endpoint):
     module.rospy.logwarn = lambda fmt, *args: print(fmt % args, file=sys.stderr, flush=True)
     import camera_peer
     camera_peer.rospy = module.rospy
+    module.CameraPeer = camera_peer.CameraPeer
     params = {"~media_source_id": "usb_cam", "~media_control_endpoint": endpoint,
               "~media_control_target_id": "fixture", "~optical_frame": "optical",
               "~parent_frame": "world", "~camera_link_frame": "link",
+              "~placement_receipt": "{}",
               "~x": 0, "~y": 0, "~z": 0, "~roll": 0, "~pitch": 0, "~yaw": 0}
     module.rospy.get_param = lambda name, default=None: params.get(name, default)
     module.rospy.on_shutdown = lambda callback: None
