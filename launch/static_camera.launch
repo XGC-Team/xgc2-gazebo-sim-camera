@@ -10,6 +10,7 @@
   <arg name="camera_profiles_file"
        default="$(find gazebo_sim_camera)/config/world_camera_profiles.yaml"/>
   <arg name="intrinsic_file" default=""/>
+  <arg name="intrinsic_json" default=""/>
   <arg name="media_source_id" default="usb_cam"/>
   <arg name="media_control_endpoint"/>
   <arg name="media_control_target_id"/>
@@ -50,6 +51,7 @@
     <param name="camera_name" value="$(arg camera_name)"/>
     <param name="camera_profiles_file" value="$(arg camera_profiles_file)"/>
     <param name="intrinsic_file" value="$(arg intrinsic_file)"/>
+    <param name="intrinsic_json" type="str" value="$(arg intrinsic_json)"/>
     <param name="width" value="$(arg width)"/>
     <param name="height" value="$(arg height)"/>
     <param name="hfov_degrees" value="$(arg hfov_degrees)"/>

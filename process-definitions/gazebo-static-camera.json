@@ -162,6 +162,11 @@
           "frameRolesJson": {
             "type": "string",
             "default": "{\"parentFrame\":\"world\",\"opticalFrames\":{\"sim\":\"xgc_world_camera_optical_frame\",\"phy\":\"usb_cam_optical_frame\"}}"
+          },
+          "intrinsicJson": {
+            "type": "string",
+            "default": "",
+            "description": "Frozen Core calibration asset camera_info numbers."
           }
         },
         "required": [
@@ -206,12 +211,12 @@
           "python_executable:=${pythonExecutable}",
           "use_sim_time:=true",
           "model_name:=${modelName}",
-"x:=${x}",
-"y:=${y}",
-"z:=${z}",
-"roll:=${roll}",
-"pitch:=${pitch}",
-"yaw:=${yaw}",
+          "x:=${x}",
+          "y:=${y}",
+          "z:=${z}",
+          "roll:=${roll}",
+          "pitch:=${pitch}",
+          "yaw:=${yaw}",
           "camera_link_frame:=${cameraLinkFrame}",
           "optical_frame:=${opticalFrame}",
           "parent_frame:=${parentFrame}",
@@ -226,7 +231,8 @@
           "mode:=${mode}",
           "publish_truth_tf:=${publishTruthTf}",
           "publish_xgc_contract:=${publishXgcContract}",
-          "xgc_transform_topic:=/xgc/camera/world/tf"
+          "xgc_transform_topic:=/xgc/camera/world/tf",
+          "intrinsic_json:=${intrinsicJson}"
         ],
         "env": {
           "ROS_MASTER_URI": "${rosMasterUri}"

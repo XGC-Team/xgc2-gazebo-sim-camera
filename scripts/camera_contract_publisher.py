@@ -7,6 +7,7 @@ Live and recorded video uses the source plugin's encoded H264 topics. Explicit
 still-image capture uses the plugin's source-control snapshot transaction.
 """
 
+import json
 import math
 import sys
 if sys.version_info < (3, 8):
@@ -159,7 +160,20 @@ def _configured_intrinsics():
     ]
     intrinsic_file = str(rospy.get_param("~intrinsic_file", "")).strip()
     camera_name = _stable_camera_name(rospy.get_param("~camera_name", "usb_cam"))
-    if intrinsic_file:
+    intrinsic_json = str(rospy.get_param("~intrinsic_json", "")).strip()
+    if intrinsic_json:
+        document = json.loads(intrinsic_json)
+        if document.get("camera_name") != camera_name:
+            raise ValueError("frozen intrinsic camera identity differs")
+        if (document.get("image_width"), document.get("image_height")) != (width, height):
+            raise ValueError("frozen intrinsic dimensions differ from the camera source")
+        camera_matrix = _matrix_data(document, "camera_matrix", 3, expected_cols=3)
+        distortion = _matrix_data(document, "distortion_coefficients", 1, minimum_cols=4)
+        model = document["distortion_model"]
+        counts = {"plumb_bob": 5, "rational_polynomial": 8, "equidistant": 4}
+        if model not in counts or len(distortion) != counts[model] or camera_matrix[0] <= 0 or camera_matrix[4] <= 0:
+            raise ValueError("frozen intrinsic model or focal length is invalid")
+    elif intrinsic_file:
         camera_matrix, distortion, model = _selected_intrinsics(
             intrinsic_file,
             (width, height),
