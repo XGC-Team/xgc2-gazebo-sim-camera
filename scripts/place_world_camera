@@ -208,7 +208,10 @@ def main(argv=None):
         result, instance = place_entity(args.world_endpoint, args.target_id,
                                         camera_entity(args, document), remaining)
         receipt = {"schema": "xgc2.placement.v1", "kind": "camera", "id": args.model_name,
-                   "entity": result, "instance": instance}
+                   "entity": result, "instance": instance,
+                   "world": {"service": "xgc2.simulation", "api_version": "v1", "profile": "http.v1",
+                             "target_id": args.target_id, "instance_id": instance,
+                             "endpoint": {"kind": "unix", "address": args.world_endpoint}}}
         if frozen is not None:
             receipt["cameraContext"] = camera_context(args, frozen, result)
         print(json.dumps(receipt, separators=(",", ":"), allow_nan=False))

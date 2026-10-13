@@ -16,6 +16,7 @@ import re
 import threading
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 import rospy
 from geometry_msgs.msg import TransformStamped
@@ -202,6 +203,8 @@ def _transform(parent, child, translation, rotation, stamp):
 
 class CameraContractPublisher:
     def __init__(self):
+        self._closed = False
+        self._placement = json.loads(rospy.get_param("~placement_receipt", "{}"))
         self._optical_frame = rospy.get_param("~optical_frame")
         (
             self._width,
@@ -287,11 +290,34 @@ class CameraContractPublisher:
             self._publish_transforms()
 
     def close(self):
+        if self._closed:
+            return
+        self._closed = True
         self._stop_event.set()
-        self._media_peer.close()
-        self._transform_thread.join()
-        if self._facts is not None:
-            self._facts.stop(rospy.Time.now().to_nsec())
+        try:
+            self._media_peer.close()
+            self._transform_thread.join()
+            if self._facts is not None:
+                self._facts.stop(rospy.Time.now().to_nsec())
+        finally:
+            if self._placement:
+                from xgc2_xrpc import Runtime, ServiceRef
+                from xgc2_gazebo_scene.simulation_client import SimulationClient
+                reference = ServiceRef.from_dict(self._placement["world"]).validate()
+                entity = self._placement["entity"]["entities"][0]["ref"]
+                runtime = Runtime(blocking_workers=1, max_calls=2, max_connections=2,
+                                  max_sessions=2, shutdown_timeout=1, log_level="error")
+                try:
+                    client = SimulationClient(reference, runtime=runtime, local_target=reference.target_id,
+                                              timeout=3)
+                    try:
+                        client.operation("/v1/entities/" + quote(entity["id"], safe=""),
+                                         {"generation": entity["generation"], "operation_timeout_ms": 3000},
+                                         method="DELETE")
+                    finally:
+                        client.close()
+                finally:
+                    runtime.close()
 
     def _apply_camera_info_metadata(self, client, description, stop):
         source_id = _stable_camera_name(rospy.get_param("~media_source_id"))
@@ -345,8 +371,11 @@ class CameraContractPublisher:
 
 def main():
     rospy.init_node("xgc_camera_contract_publisher")
-    CameraContractPublisher()
-    rospy.spin()
+    publisher = CameraContractPublisher()
+    try:
+        rospy.spin()
+    finally:
+        publisher.close()
 
 
 if __name__ == "__main__":

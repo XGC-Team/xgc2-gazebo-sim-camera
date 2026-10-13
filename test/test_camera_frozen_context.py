@@ -5,7 +5,7 @@ import sys
 import tempfile
 from types import SimpleNamespace, ModuleType
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_camera_intrinsic_selection import _load_publisher_module
@@ -37,7 +37,7 @@ class NoPeer:
 
 
 class FrozenWorldCameraTest(unittest.TestCase):
-    def make_publisher(self, calibrated):
+    def make_publisher(self, calibrated, placement=None):
         module = _load_publisher_module()
         with tempfile.TemporaryDirectory() as root:
             choice = {"mode": "auto"}
@@ -53,7 +53,7 @@ class FrozenWorldCameraTest(unittest.TestCase):
             "~roll": 0., "~pitch": 0., "~yaw": 0., "~output_transform_topic": "/xgc/camera/world/tf",
             "~resolved_extrinsic_json": encode_frozen(frozen), "~frame_roles_json": json.dumps(ROLES),
             "~camera_name": "world", "~media_control_endpoint": "/private/camera.sock",
-            "~media_control_target_id": "fixture"}
+            "~media_control_target_id": "fixture", "~placement_receipt": json.dumps(placement or {})}
         events = []
         def publisher(topic, *_args, **_kwargs):
             return SimpleNamespace(publish=lambda message: events.append((topic, message)))
@@ -105,6 +105,30 @@ class FrozenWorldCameraTest(unittest.TestCase):
         self.assertNotIn("resolvedOpticalPose", frozen)
         self.assertFalse(fact["values"]["calibrated"])
         self.assertEqual(fact["values"]["transforms"][0]["translation"], [7, 8, 9])
+
+    def test_close_removes_only_the_owned_world_instance_and_entity_generation_once(self):
+        receipt = {"world": {"service": "xgc2.simulation", "api_version": "v1", "profile": "http.v1",
+            "target_id": "fixture", "instance_id": "1" * 32,
+            "endpoint": {"kind": "unix", "address": "/granted/world.sock"}},
+            "entity": {"entities": [{"ref": {"id": "gazebo_static_camera", "generation": 7}}]}}
+        sdk = ModuleType("xgc2_xrpc")
+        sdk.Runtime, sdk.ServiceRef = Mock(), Mock()
+        reference = SimpleNamespace(target_id="fixture")
+        sdk.ServiceRef.from_dict.return_value.validate.return_value = reference
+        simulation = ModuleType("xgc2_gazebo_scene.simulation_client")
+        simulation.SimulationClient = Mock()
+        with patch.dict(sys.modules, {sdk.__name__: sdk, simulation.__name__: simulation}):
+            runtime, _, _ = self.make_publisher(False, receipt)
+            runtime.close()
+            runtime.close()
+            sdk.ServiceRef.from_dict.assert_called_once_with(receipt["world"])
+            sdk.ServiceRef.from_dict.return_value.validate.assert_called_once_with()
+            simulation.SimulationClient.assert_called_once_with(reference,
+                runtime=sdk.Runtime.return_value, local_target="fixture", timeout=3)
+            simulation.SimulationClient.return_value.operation.assert_called_once_with("/v1/entities/gazebo_static_camera",
+                {"generation": 7, "operation_timeout_ms": 3000}, method="DELETE")
+            simulation.SimulationClient.return_value.close.assert_called_once_with()
+            sdk.Runtime.return_value.close.assert_called_once_with()
 
     def test_tf_send_failure_never_emits_record_success(self):
         runtime, _, events = self.make_publisher(False)

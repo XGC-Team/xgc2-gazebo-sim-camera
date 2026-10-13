@@ -26,6 +26,9 @@ loader.exec_module(placement_cli)
 REQUIRED = ["--world-endpoint", "/granted/world.sock", "--target-id", "fixture",
             "--media-control-endpoint", "/granted/camera.sock",
             "--media-control-target-id", "fixture", "--media-rtp-port", "26417"]
+WORLD_REFERENCE = {"service": "xgc2.simulation", "api_version": "v1", "profile": "http.v1",
+                   "target_id": "fixture", "instance_id": "1" * 32,
+                   "endpoint": {"kind": "unix", "address": "/granted/world.sock"}}
 
 
 def normalized_xml(document):
@@ -92,7 +95,8 @@ class PlacementTest(unittest.TestCase):
                 self.assertEqual(entity["asset"]["realization"]["media_type"], "application/urdf+xml")
                 self.assertEqual(normalized_xml(entity["asset"]["realization"]["content"]), row["normalized_urdf"])
                 self.assertEqual(json.loads(stdout), {"schema": "xgc2.placement.v1", "kind": "camera",
-                    "id": entity["id"], "entity": result, "instance": "1" * 32})
+                    "id": entity["id"], "entity": result, "instance": "1" * 32,
+                    "world": WORLD_REFERENCE})
                 self.assertEqual(len(stdout.splitlines()), 1)
 
     def test_pose_and_remaining_whole_run_budget_reach_the_shared_helper(self):
@@ -135,7 +139,10 @@ class PlacementTest(unittest.TestCase):
                 return result
             code, stdout, stderr, calls, _ = self.invoke(arguments, acknowledged=acknowledged)
             self.assertEqual(code, 0, stderr)
-            context = json.loads(stdout)["cameraContext"]
+            receipt = json.loads(stdout)
+            self.assertEqual(receipt["world"], WORLD_REFERENCE)
+            self.assertEqual(receipt["world"]["instance_id"], receipt["instance"])
+            context = receipt["cameraContext"]
             self.assertEqual(json.loads(context["resolvedExtrinsicJson"]), frozen)
             self.assertEqual(frozen["status"], "uncalibrated")
             self.assertNotIn("resolvedOpticalPose", frozen)

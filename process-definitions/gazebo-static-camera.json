@@ -167,6 +167,11 @@
             "type": "string",
             "default": "",
             "description": "Frozen Core calibration asset camera_info numbers."
+          },
+          "placementReceipt": {
+            "type": "json",
+            "default": {},
+            "description": "Native placement receipt owned by this camera runtime; Stop removes only its pinned world instance and entity generation."
           }
         },
         "required": [
@@ -232,7 +237,8 @@
           "publish_truth_tf:=${publishTruthTf}",
           "publish_xgc_contract:=${publishXgcContract}",
           "xgc_transform_topic:=/xgc/camera/world/tf",
-          "intrinsic_json:=${intrinsicJson}"
+          "intrinsic_json:=${intrinsicJson}",
+          "placement_receipt:=${placementReceipt}"
         ],
         "env": {
           "ROS_MASTER_URI": "${rosMasterUri}"
