@@ -29,7 +29,10 @@ docker run --rm \
   "${DOCKER_IMAGE}" bash -lc '
     set -euo pipefail
 
-    echo "deb [trusted=yes arch=$(dpkg --print-architecture)] https://xgc2.apt.xiaokang.ink focal main" >/etc/apt/sources.list.d/xgc2.list
+    install -d -m 0755 /etc/apt/keyrings
+    curl -fsSL --retry 5 https://xgc2.apt.xiaokang.ink/xgc2-archive-keyring.gpg \
+      -o /etc/apt/keyrings/xgc2-archive-keyring.gpg
+    echo "deb [signed-by=/etc/apt/keyrings/xgc2-archive-keyring.gpg arch=$(dpkg --print-architecture)] https://xgc2.apt.xiaokang.ink focal main" >/etc/apt/sources.list.d/xgc2.list
     if [[ -n "${XGC2_APT_OVERLAY_URL:-}" ]]; then
       sed "s#https://xgc2.apt.xiaokang.ink#${XGC2_APT_OVERLAY_URL%/}#g" /etc/apt/sources.list.d/xgc2.list >/etc/apt/sources.list.d/00-xgc2-release-train.list
     fi
@@ -37,6 +40,7 @@ docker run --rm \
     apt-get install -y --no-install-recommends \
       libxgc2-xrpc-dev \
       ros-noetic-xgc2-camera-msgs \
+      ros-noetic-xgc2-camera-calibration \
       ros-noetic-xgc2-gazebo-sim-worlds \
       ros-noetic-xgc2-gazebo-scene
     scene_version="$(dpkg-query -W -f '\''${Version}'\'' ros-noetic-xgc2-gazebo-scene)"
