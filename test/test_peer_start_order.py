@@ -16,6 +16,7 @@ import time
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from xgc2_xrpc import Fault, Host, Runtime
 from test_camera_intrinsic_selection import _load_publisher_module
 
