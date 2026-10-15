@@ -13,7 +13,7 @@ import sys
 import tempfile
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
 
@@ -73,6 +73,70 @@ class PlacementTest(unittest.TestCase):
                 else:
                     sys.modules[name] = value
         return code, stdout.getvalue(), stderr.getvalue(), calls, result
+
+    def test_finite_placement_writes_the_runtime_owned_receipt_atomically(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "camera.placement.json"
+            code, stdout, stderr, calls, _ = self.invoke(REQUIRED + ["--receipt-file", str(path)])
+            self.assertEqual(code, 0, stderr)
+            receipt = json.loads(stdout)
+            self.assertEqual(json.loads(path.read_text()), receipt)
+            self.assertEqual(receipt["world"], WORLD_REFERENCE)
+            self.assertEqual(receipt["entity"]["entities"][0]["ref"]["generation"], 7)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(list(Path(directory).iterdir()), [path])
+
+    def test_failed_receipt_handoff_releases_the_owned_generation_without_replay(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "camera.placement.json"
+            with patch.object(placement_cli.os, "replace", side_effect=OSError("receipt disk failure")), \
+                    patch.object(placement_cli, "release_failed_handoff") as release:
+                code, stdout, stderr, calls, _ = self.invoke(REQUIRED + ["--receipt-file", str(path)])
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("receipt disk failure", stderr)
+            self.assertEqual(len(calls), 1)
+            release.assert_called_once()
+            receipt = release.call_args.args[0]
+            self.assertEqual(receipt["world"], WORLD_REFERENCE)
+            self.assertEqual(receipt["entity"]["entities"][0]["ref"], {"id":"returned-camera", "generation":7})
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_failed_receipt_release_reports_both_failures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(placement_cli.os, "replace", side_effect=OSError("receipt disk failure")), \
+                    patch.object(placement_cli, "release_failed_handoff", side_effect=RuntimeError("world unavailable")) as release:
+                code, stdout, stderr, calls, _ = self.invoke(REQUIRED + ["--receipt-file", str(Path(directory)/"receipt.json")])
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("receipt disk failure", stderr)
+            self.assertIn("owned entity release failed: world unavailable", stderr)
+            release.assert_called_once()
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_handoff_release_uses_pinned_world_and_bounded_native_delete(self):
+        sdk = types.ModuleType("xgc2_xrpc")
+        sdk.Runtime, sdk.ServiceRef = Mock(), Mock()
+        reference = types.SimpleNamespace(target_id="fixture")
+        sdk.ServiceRef.from_dict.return_value.validate.return_value = reference
+        simulation = types.ModuleType("xgc2_gazebo_scene.simulation_client")
+        simulation.SimulationClient = Mock()
+        receipt = {"world": WORLD_REFERENCE, "entity":{"entities":[{"ref":{"id":"owned/camera", "generation":7}}]}}
+        with patch.dict(sys.modules, {sdk.__name__:sdk, simulation.__name__:simulation}):
+            placement_cli.release_failed_handoff(receipt)
+        sdk.ServiceRef.from_dict.assert_called_once_with(WORLD_REFERENCE)
+        simulation.SimulationClient.assert_called_once_with(reference, runtime=sdk.Runtime.return_value,
+            local_target="fixture", timeout=3)
+        simulation.SimulationClient.return_value.operation.assert_called_once_with("/v1/entities/owned%2Fcamera",
+            {"generation":7,"operation_timeout_ms":3000}, method="DELETE")
+        simulation.SimulationClient.return_value.close.assert_called_once_with()
+        sdk.Runtime.return_value.close.assert_called_once_with()
+
+    def test_invalid_receipt_path_is_rejected_before_contacting_world(self):
+        code, _, _, calls, _ = self.invoke(REQUIRED + ["--receipt-file", "relative.json"])
+        self.assertEqual(code, 2)
+        self.assertEqual(calls, [])
 
     def test_six_models_equal_the_base_launch_description_parameter(self):
         reference = json.loads((ROOT / "test/placement_reference/base_launch.json").read_text())
@@ -148,7 +212,7 @@ class PlacementTest(unittest.TestCase):
             self.assertNotIn("resolvedOpticalPose", frozen)
             self.assertEqual(context["appliedLinkPose"]["x"], 7)
             self.assertEqual(context["entityRef"], {"id": "gazebo_static_camera", "generation": 7})
-            self.assertAlmostEqual(context["appliedOpticalPose"]["translation"][1], 8.067)
+            self.assertNotIn("appliedOpticalPose", context)
             self.assertEqual(context["cameraInfoTopic"], "/xgc/camera/world/camera_info")
             self.assertNotIn("imageTopic", context)
             self.assertNotIn("applicationStateParam", context)
@@ -166,7 +230,7 @@ class PlacementTest(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             context = json.loads(stdout)["cameraContext"]
             self.assertEqual(json.loads(context["resolvedExtrinsicJson"]), frozen)
-            self.assertIn("appliedOpticalPose", context)
+            self.assertNotIn("appliedOpticalPose", context)
             pose = calls[0][2]["pose"]
             rotation = quaternion_to_rotation_matrix(pose["orientation"])
             optical = rotation.dot((0.067, 0, 0)) + pose["position"]

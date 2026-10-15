@@ -3,7 +3,7 @@
   "definitions": [
     {
       "id": "gazebo-static-camera",
-      "version": "1.5.0",
+      "version": "2.0.0",
       "label": "Gazebo fixed-site RGB camera",
       "description": "Runs the per-camera ROS CameraInfo metadata registration and TF publishers. Core starts this runtime in parallel with media-edge, then places the camera through the finite placement CLI after awaiting the world. The camera-source authority is the plugin inside gzserver.",
       "parameters": {
@@ -83,14 +83,6 @@
             "type": "string",
             "default": "usb_cam"
           },
-          "intrinsicFile": {
-            "type": "string",
-            "default": "",
-            "x-xgc-path-kind": "file",
-            "x-xgc-file-extensions": [
-              ".yaml"
-            ]
-          },
           "extrinsicFile": {
             "type": "string",
             "default": "",
@@ -135,7 +127,8 @@
             "type": "string",
             "description": "Selected interpreter with the released XRPC wheel and ROS modules installed.",
             "fixedOnly": true,
-            "x-xgc-path-kind": "file"
+            "x-xgc-path-kind": "file",
+            "default": "/usr/bin/python3"
           },
           "mode": {
             "type": "string",
@@ -172,6 +165,11 @@
             "type": "json",
             "default": {},
             "description": "Native placement receipt owned by this camera runtime; Stop removes only its pinned world instance and entity generation."
+          },
+          "placementReceiptFile": {
+            "type": "string",
+            "default": "",
+            "description": "Runtime-owned receipt file written atomically by finite placement; read only when releasing the pinned entity generation."
           }
         },
         "required": [
@@ -230,7 +228,6 @@
           "camera_profile:=${cameraProfile}",
           "camera_name:=${cameraName}",
           "calibration_root:=${calibrationRoot}",
-          "intrinsic_file:=${intrinsicFile}",
           "media_source_id:=${mediaSourceId}",
           "media_control_endpoint:=${mediaControlEndpoint}",
           "mode:=${mode}",
@@ -238,7 +235,8 @@
           "publish_xgc_contract:=${publishXgcContract}",
           "xgc_transform_topic:=/xgc/camera/world/tf",
           "intrinsic_json:=${intrinsicJson}",
-          "placement_receipt:=${placementReceipt}"
+          "placement_receipt:=${placementReceipt}",
+          "placement_receipt_file:=${placementReceiptFile}"
         ],
         "env": {
           "ROS_MASTER_URI": "${rosMasterUri}"

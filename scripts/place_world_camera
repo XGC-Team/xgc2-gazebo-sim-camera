@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import tempfile
 import time
 import xml.etree.ElementTree as ET
 
@@ -38,6 +39,7 @@ def parse_arguments(argv):
     parser.add_argument("--media-control-target-id", required=True, help="camera-source target grant")
     parser.add_argument("--media-rtp-port", required=True, type=int, help="allocated RTP port, 1-65535")
     parser.add_argument("--camera-name", default="")
+    parser.add_argument("--receipt-file", default="", help="absolute runtime-owned placement receipt artifact")
     parser.add_argument("--resolved-extrinsic-json", default="")
     parser.add_argument("--frame-roles-json", default="")
     defaults = {
@@ -67,6 +69,8 @@ def parse_arguments(argv):
         parser.add_argument("--" + name, type=float, default=default, help="camera pose in metres/radians")
     parser.add_argument("--timeout", type=float, default=50.0, help="whole-run deadline in seconds, (0, 55]")
     args = parser.parse_args(argv)
+    if args.receipt_file and (not os.path.isabs(args.receipt_file) or os.path.normpath(args.receipt_file) != args.receipt_file or "\0" in args.receipt_file):
+        raise UsageError("receipt file must be a canonical absolute path")
     for name in ("world_endpoint", "media_control_endpoint"):
         value = getattr(args, name)
         if (not os.path.isabs(value) or value.startswith("//") or os.path.normpath(value) != value
@@ -150,7 +154,7 @@ def apply_frozen_pose(args):
     sys.path.append(ROS_PYTHON)
     from xgc_camera_calibration.extrinsic_application import parse_frame_roles
     from xgc_camera_calibration.extrinsic_resolver import decode_frozen
-    from xgc_camera_calibration.camera_initial_pose import gazebo_camera_link_pose_from_optical
+    from xgc_camera_calibration.camera_initial_pose import gazebo_camera_link_pose_from_optical, GAZEBO_LINK_TO_OPTICAL_TRANSLATION
     roles = parse_frame_roles(args.frame_roles_json)
     if roles["parentFrame"] != "world" or roles["opticalFrames"]["sim"] != args.optical_frame:
         raise UsageError("camera placement frames differ from its frozen resolution")
@@ -158,15 +162,13 @@ def apply_frozen_pose(args):
     if frozen["status"] != "uncalibrated":
         pose = frozen["resolvedOpticalPose"]
         for name, value in gazebo_camera_link_pose_from_optical(
-                pose["translation"], pose["quaternionXyzw"], (0.067, 0., 0.)).items():
+                pose["translation"], pose["quaternionXyzw"], GAZEBO_LINK_TO_OPTICAL_TRANSLATION).items():
             setattr(args, name, value)
     return frozen
 
 
 def camera_context(args, frozen, result):
-    from xgc_camera_calibration.transforms import (
-        link_to_optical_rotation, quaternion_to_rotation_matrix, rotation_matrix_to_rpy)
-    from xgc_camera_calibration.solver import rotation_matrix_to_quaternion
+    from xgc_camera_calibration.transforms import quaternion_to_rotation_matrix, rotation_matrix_to_rpy
     entities = result.get("entities", [])
     if len(entities) != 1 or entities[0].get("ref", {}).get("id") != args.model_name or entities[0].get("lifecycle") != "ready":
         raise UsageError("world did not acknowledge this camera's ready entity")
@@ -180,14 +182,50 @@ def camera_context(args, frozen, result):
                "opticalFrame": args.optical_frame, "frameRolesJson": args.frame_roles_json,
                "resolvedExtrinsicJson": args.resolved_extrinsic_json, "appliedLinkPose": link,
                "entityRef": entities[0]["ref"]}
-    # The acknowledged native pose remains separate from saved calibration.
-    # With an uncalibrated resolution this is only a temporary estimate.
-    context["appliedOpticalPose"] = {
-        "translation": [float(value + offset) for value, offset in
-                        zip(pose["position"], rotation.dot((0.067, 0., 0.)))],
-        "quaternionXyzw": rotation_matrix_to_quaternion(
-            rotation.dot(link_to_optical_rotation())).tolist()}
     return context
+
+
+def release_failed_handoff(receipt):
+    """Release only the generation whose ownership could not reach the runtime."""
+    from urllib.parse import quote
+    from xgc2_xrpc import Runtime, ServiceRef
+    from xgc2_gazebo_scene.simulation_client import SimulationClient
+    reference = ServiceRef.from_dict(receipt["world"]).validate()
+    entity = receipt["entity"]["entities"][0]["ref"]
+    runtime = Runtime(blocking_workers=1, max_calls=2, max_connections=2,
+                      max_sessions=2, shutdown_timeout=1, log_level="error")
+    try:
+        client = SimulationClient(reference, runtime=runtime, local_target=reference.target_id,
+                                  timeout=3)
+        try:
+            client.operation("/v1/entities/" + quote(entity["id"], safe=""),
+                             {"generation": entity["generation"], "operation_timeout_ms": 3000},
+                             method="DELETE")
+        finally:
+            client.close()
+    finally:
+        runtime.close()
+
+
+def handoff_receipt(path, receipt, payload):
+    temporary = None
+    try:
+        fd, temporary = tempfile.mkstemp(prefix=".camera-receipt-", dir=str(path.parent))
+        with os.fdopen(fd, "w") as stream:
+            stream.write(payload)
+        os.replace(temporary, path)
+    except OSError as error:
+        # The finite placement call still owns the acknowledged entity until
+        # its receipt reaches the already-running release owner.
+        try:
+            release_failed_handoff(receipt)
+        except Exception as release_error:
+            raise UsageError("placement receipt handoff failed: {}; owned entity release failed: {}".format(
+                error, release_error)) from release_error
+        raise
+    finally:
+        if temporary is not None and os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def main(argv=None):
@@ -214,7 +252,13 @@ def main(argv=None):
                              "endpoint": {"kind": "unix", "address": args.world_endpoint}}}
         if frozen is not None:
             receipt["cameraContext"] = camera_context(args, frozen, result)
-        print(json.dumps(receipt, separators=(",", ":"), allow_nan=False))
+        payload = json.dumps(receipt, separators=(",", ":"), allow_nan=False)
+        if args.receipt_file:
+            path = Path(args.receipt_file)
+            if not path.is_absolute() or str(path) != os.path.normpath(str(path)):
+                raise UsageError("receipt file must be a canonical absolute path")
+            handoff_receipt(path, receipt, payload)
+        print(payload)
         return 0
     except Exception as error:
         reason = " ".join(str(error).split()) or type(error).__name__

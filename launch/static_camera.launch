@@ -9,9 +9,9 @@
   <arg name="camera_name" default="usb_cam"/>
   <arg name="camera_profiles_file"
        default="$(find gazebo_sim_camera)/config/world_camera_profiles.yaml"/>
-  <arg name="intrinsic_file" default=""/>
   <arg name="intrinsic_json" default=""/>
   <arg name="placement_receipt" default="{}"/>
+  <arg name="placement_receipt_file" default=""/>
   <arg name="media_source_id" default="usb_cam"/>
   <arg name="media_control_endpoint"/>
   <arg name="media_control_target_id"/>
@@ -42,7 +42,7 @@
         pkg="gazebo_sim_camera" type="camera_contract_publisher.py" launch-prefix="$(arg python_executable)"
         name="$(arg model_name)_xgc_camera_contract" output="screen">
     <!-- This world-camera product owns the XGC CameraInfo/TF contract.
-         CameraInfo uses the selected intrinsic YAML when supplied; the profile
+         CameraInfo uses the frozen intrinsic document when supplied; the profile
          remains the pre-calibration fallback used by intrinsic capture itself.
          Still images are explicit source-control snapshots, not a ROS timer. -->
     <param name="calibration_root" value="$(arg calibration_root)"/>
@@ -51,9 +51,9 @@
     <param name="camera_profile" value="$(arg camera_profile)"/>
     <param name="camera_name" value="$(arg camera_name)"/>
     <param name="camera_profiles_file" value="$(arg camera_profiles_file)"/>
-    <param name="intrinsic_file" value="$(arg intrinsic_file)"/>
     <param name="intrinsic_json" type="str" value="$(arg intrinsic_json)"/>
     <param name="placement_receipt" type="str" value="$(arg placement_receipt)"/>
+    <param name="placement_receipt_file" type="str" value="$(arg placement_receipt_file)"/>
     <param name="width" value="$(arg width)"/>
     <param name="height" value="$(arg height)"/>
     <param name="hfov_degrees" value="$(arg hfov_degrees)"/>

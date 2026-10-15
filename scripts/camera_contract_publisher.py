@@ -24,13 +24,10 @@ from tf.transformations import quaternion_from_euler
 from tf2_msgs.msg import TFMessage
 import yaml
 from camera_peer import CameraPeer
+from xgc_camera_calibration.camera_initial_pose import GAZEBO_LINK_TO_OPTICAL_TRANSLATION
 
 
 _CAMERA_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9._-]{0,63}$")
-_INTRINSIC_NAME_PATTERN = re.compile(
-    r"intrinsics-\d{8}T\d{6}\.\d{6}Z\.yaml"
-)
-
 
 def _profile_value(argument, fallback, convert):
     return convert(fallback if str(argument) == "profile" else argument)
@@ -48,68 +45,22 @@ def _stable_camera_name(value):
 def _matrix_data(document, field, expected_rows, expected_cols=None, minimum_cols=None):
     matrix = document.get(field)
     if not isinstance(matrix, dict):
-        raise ValueError("intrinsic_file {} must be a matrix object".format(field))
+        raise ValueError("intrinsic {} must be a matrix object".format(field))
     rows = matrix.get("rows")
     cols = matrix.get("cols")
     data = matrix.get("data")
     if rows != expected_rows:
-        raise ValueError("intrinsic_file {} has invalid rows".format(field))
+        raise ValueError("intrinsic {} has invalid rows".format(field))
     if expected_cols is not None and cols != expected_cols:
-        raise ValueError("intrinsic_file {} has invalid cols".format(field))
+        raise ValueError("intrinsic {} has invalid cols".format(field))
     if minimum_cols is not None and (not isinstance(cols, int) or cols < minimum_cols):
-        raise ValueError("intrinsic_file {} has too few columns".format(field))
+        raise ValueError("intrinsic {} has too few columns".format(field))
     if not isinstance(data, list) or len(data) != rows * cols:
-        raise ValueError("intrinsic_file {} data length does not match rows/cols".format(field))
+        raise ValueError("intrinsic {} data length does not match rows/cols".format(field))
     values = [float(value) for value in data]
     if not all(math.isfinite(value) for value in values):
-        raise ValueError("intrinsic_file {} contains non-finite values".format(field))
+        raise ValueError("intrinsic {} contains non-finite values".format(field))
     return values
-
-
-def _selected_intrinsics(path_value, configured_size, camera_name):
-    camera_name = _stable_camera_name(camera_name)
-    path = Path(str(path_value).strip()).expanduser()
-    if not path.is_absolute():
-        raise ValueError("intrinsic_file must be an absolute YAML file path")
-    try:
-        path = path.resolve(strict=True)
-    except OSError as error:
-        raise ValueError("intrinsic_file must resolve to an existing YAML file") from error
-    if (
-        path.parent.parent.name != "sim"
-        or path.parent.name != camera_name
-        or not _INTRINSIC_NAME_PATTERN.fullmatch(path.name)
-    ):
-        raise ValueError(
-            "intrinsic_file must be a concrete timestamped file under <root>/sim/<camera_name>/"
-        )
-    with path.open("r", encoding="utf-8") as stream:
-        document = yaml.safe_load(stream) or {}
-    if not isinstance(document, dict) or document.get("schema") != "xgc2.camera.intrinsic.v1":
-        raise ValueError("intrinsic_file must contain an xgc2.camera.intrinsic.v1 document")
-    if str(document.get("camera_name", "")).strip() != camera_name:
-        raise ValueError("intrinsic_file camera_name must match the configured camera_name")
-    width = int(document.get("image_width", 0))
-    height = int(document.get("image_height", 0))
-    if (width, height) != configured_size:
-        raise ValueError(
-            "intrinsic_file is {}x{}, but the configured camera is {}x{}".format(
-                width,
-                height,
-                configured_size[0],
-                configured_size[1],
-            )
-        )
-    camera_matrix = _matrix_data(document, "camera_matrix", 3, expected_cols=3)
-    distortion = _matrix_data(
-        document, "distortion_coefficients", 1, minimum_cols=4
-    )
-    _matrix_data(document, "rectification_matrix", 3, expected_cols=3)
-    _matrix_data(document, "projection_matrix", 3, expected_cols=4)
-    model = document.get("distortion_model", "plumb_bob")
-    if model not in {"plumb_bob": 5, "rational_polynomial": 8, "equidistant": 4} or len(distortion) != {"plumb_bob": 5, "rational_polynomial": 8, "equidistant": 4}[model]:
-        raise ValueError("intrinsic distortion model and coefficient count differ")
-    return camera_matrix, distortion, model
 
 
 def _configured_intrinsics():
@@ -159,7 +110,6 @@ def _configured_intrinsics():
         0.0,
         1.0,
     ]
-    intrinsic_file = str(rospy.get_param("~intrinsic_file", "")).strip()
     camera_name = _stable_camera_name(rospy.get_param("~camera_name", "usb_cam"))
     intrinsic_json = str(rospy.get_param("~intrinsic_json", "")).strip()
     if intrinsic_json:
@@ -174,12 +124,6 @@ def _configured_intrinsics():
         counts = {"plumb_bob": 5, "rational_polynomial": 8, "equidistant": 4}
         if model not in counts or len(distortion) != counts[model] or camera_matrix[0] <= 0 or camera_matrix[4] <= 0:
             raise ValueError("frozen intrinsic model or focal length is invalid")
-    elif intrinsic_file:
-        camera_matrix, distortion, model = _selected_intrinsics(
-            intrinsic_file,
-            (width, height),
-            camera_name,
-        )
     else:
         distortion = [0.0] * 5
         model = "plumb_bob"
@@ -204,7 +148,9 @@ def _transform(parent, child, translation, rotation, stamp):
 class CameraContractPublisher:
     def __init__(self):
         self._closed = False
+        self._close_error = None
         self._placement = json.loads(rospy.get_param("~placement_receipt", "{}"))
+        self._placement_file = str(rospy.get_param("~placement_receipt_file", ""))
         self._optical_frame = rospy.get_param("~optical_frame")
         (
             self._width,
@@ -269,7 +215,8 @@ class CameraContractPublisher:
         # it is never inferred from image transport metadata.
         self._publish_transforms()
         self._media_peer = CameraPeer(rospy.get_param("~media_control_endpoint"),
-            rospy.get_param("~media_control_target_id"), "camera-source", self._apply_camera_info_metadata)
+            rospy.get_param("~media_control_target_id"), "camera-source", self._apply_camera_info_metadata,
+            [self._placement_file] if self._placement_file else [])
         self._transform_thread = threading.Thread(target=self._transform_loop, daemon=True)
         self._transform_thread.start()
         rospy.on_shutdown(self.close)
@@ -277,7 +224,7 @@ class CameraContractPublisher:
     def _set_frozen_estimate(self, frozen):
         from xgc_camera_calibration.transforms import split_parent_to_optical_pose
         pose = frozen["resolvedOpticalPose"]
-        chain = split_parent_to_optical_pose(pose["translation"], pose["quaternionXyzw"], (0.067, 0., 0.))
+        chain = split_parent_to_optical_pose(pose["translation"], pose["quaternionXyzw"], GAZEBO_LINK_TO_OPTICAL_TRANSLATION)
         with self._pose_lock:
             self._translation = chain["parent_t_link"]
             self._pose_rotation = chain["parent_q_link_xyzw"]
@@ -291,8 +238,19 @@ class CameraContractPublisher:
 
     def close(self):
         if self._closed:
+            if self._close_error is not None:
+                raise self._close_error
             return
         self._closed = True
+        try:
+            self._release_owned_resources()
+        except Exception as error:
+            # rospy may catch a shutdown callback error. The entrypoint's final
+            # close must still surface a failed entity release to its owner.
+            self._close_error = error
+            raise
+
+    def _release_owned_resources(self):
         self._stop_event.set()
         try:
             self._media_peer.close()
@@ -300,6 +258,11 @@ class CameraContractPublisher:
             if self._facts is not None:
                 self._facts.stop(rospy.Time.now().to_nsec())
         finally:
+            if self._placement_file:
+                try:
+                    self._placement = json.loads(Path(self._placement_file).read_text())
+                except FileNotFoundError:
+                    pass  # No placement was acknowledged for this owner.
             if self._placement:
                 from xgc2_xrpc import Runtime, ServiceRef
                 from xgc2_gazebo_scene.simulation_client import SimulationClient
@@ -318,8 +281,32 @@ class CameraContractPublisher:
                         client.close()
                 finally:
                     runtime.close()
+                if self._placement_file:
+                    Path(self._placement_file).unlink(missing_ok=True)
+
+    def _realize_placement(self):
+        if not self._placement_file or self._placement:
+            return
+        try:
+            receipt = json.loads(Path(self._placement_file).read_text())
+        except FileNotFoundError:
+            return
+        context = receipt.get("cameraContext", {})
+        if context.get("cameraName") != rospy.get_param("~camera_name"):
+            raise ValueError("placement receipt camera identity differs from its owner")
+        pose = context["appliedLinkPose"]
+        values = [float(pose[name]) for name in ("x", "y", "z", "roll", "pitch", "yaw")]
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("placement receipt pose must be finite")
+        with self._pose_lock:
+            self._translation = tuple(values[:3])
+            self._pose_rotation = quaternion_from_euler(*values[3:])
+        self._placement = receipt
+        self._publish_transforms()
 
     def _apply_camera_info_metadata(self, client, description, stop):
+        # Socket/receipt events realize native placement after independent start.
+        self._realize_placement()
         source_id = _stable_camera_name(rospy.get_param("~media_source_id"))
         if source_id not in description["facts"]["sources"]:
             raise RuntimeError("camera source has not registered")
@@ -358,7 +345,7 @@ class CameraContractPublisher:
             _transform(
                 self._camera_link_frame,
                 self._optical_frame,
-                (0.067, 0.0, 0.0),
+                GAZEBO_LINK_TO_OPTICAL_TRANSLATION,
                 self._optical_rotation,
                 stamp,
             ),

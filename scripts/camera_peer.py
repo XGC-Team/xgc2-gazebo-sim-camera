@@ -8,18 +8,21 @@ import threading
 import time
 
 import rospy
-from xgc2_xrpc import Client, Runtime, ServiceRef
+from xgc2_xrpc import Client, Limits, Runtime, ServiceRef
 
 
 class CameraPeer:
-    def __init__(self, endpoint, target_id, service, reconcile):
+    def __init__(self, endpoint, target_id, service, reconcile, wake_paths=()):
         self.endpoint, self.target_id, self.service = endpoint, target_id, service
         self.reconcile = reconcile
+        self._watched_names = {os.fsencode(os.path.basename(path)) for path in (endpoint, *wake_paths)}
         self._closed = False
         self.status = {"state": "waiting", "attempts": 0, "desired_revision": 1, "applied_revision": 0}
         self.stop = threading.Event()
-        self._runtime = Runtime(blocking_workers=1, max_calls=4, max_connections=4)
-        self._discovery = Client(endpoint, runtime=self._runtime)
+        self._runtime = Runtime(blocking_workers=1, max_calls=4, max_connections=4, shutdown_timeout=1)
+        self._pending = None
+        self._pending_lock = threading.Lock()
+        self._discovery = Client(endpoint, runtime=self._runtime, limits=Limits(shutdown_timeout=1))
         self._client = None
         self._wake_read, self._wake_write = os.pipe2(os.O_NONBLOCK | os.O_CLOEXEC)
         libc = ctypes.CDLL(None, use_errno=True)
@@ -29,7 +32,7 @@ class CameraPeer:
                                                     0x100 | 0x200 | 0x80 | 0x40) < 0:
             self.close()
             raise OSError(ctypes.get_errno(), "camera peer directory watch failed")
-        self._thread = threading.Thread(target=self._work, name=service + "-watch")
+        self._thread = threading.Thread(target=self._work, name=service + "-watch", daemon=True)
         self._thread.start()
 
     def _wait(self, timeout=None):
@@ -50,7 +53,7 @@ class CameraPeer:
                 _, _, _, length = struct.unpack_from("iIII", data, offset)
                 name = data[offset + 16:offset + 16 + length].split(b"\0", 1)[0]
                 offset += 16 + length
-                if name == os.fsencode(os.path.basename(self.endpoint)):
+                if name in self._watched_names:
                     return
 
     def _work(self):
@@ -64,7 +67,17 @@ class CameraPeer:
                     continue
                 try:
                     self.status["attempts"] += 1
-                    description = self._discovery.json("/v1/describe?wait_ready_ms=30000", method="GET", timeout=31)
+                    with self._pending_lock:
+                        if self.stop.is_set(): break
+                        pending = self._runtime.submit(self._discovery.call_async(
+                            "/v1/describe?wait_ready_ms=30000", method="GET", timeout=31))
+                        self._pending = pending
+                    try:
+                        import json
+                        description = json.loads(pending.result().body)
+                    finally:
+                        with self._pending_lock:
+                            self._pending = None
                     if not description["ready"]:
                         raise RuntimeError("peer is not ready")
                     reference = ServiceRef.from_dict(description.get("facts", {}).get("service_ref", description.get("service_ref"))).validate()
@@ -86,6 +99,9 @@ class CameraPeer:
                         while not self.stop.is_set():
                             status = self._client.json(route + str(revision), method="GET", timeout=8)
                             revision = status["event_revision"]
+                            if select.select([self._events], [], [], 0)[0]:
+                                self._wait(0)
+                                self.reconcile(self._client, description, self.stop)
                 except Exception as error:
                     if self.stop.is_set():
                         break
@@ -114,13 +130,18 @@ class CameraPeer:
         self.stop.set()
         if hasattr(self, "_wake_write"):
             self.wake()
-        # Cancel held calls before joining their sole worker.
+        # Cancel the exact held discovery before joining its sole worker.
+        with self._pending_lock:
+            if self._pending is not None:
+                self._pending.cancel()
         client = self._client
         if client is not None:
             client.close()
         self._discovery.close()
         if hasattr(self, "_thread"):
-            self._thread.join()
+            self._thread.join(timeout=3)
+            if self._thread.is_alive():
+                raise RuntimeError("camera peer did not stop within its shutdown deadline")
         self._runtime.close()
         for name in ("_events", "_wake_read", "_wake_write"):
             fd = getattr(self, name, -1)

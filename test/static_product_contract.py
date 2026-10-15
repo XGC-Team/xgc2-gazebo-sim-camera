@@ -166,11 +166,11 @@ assert 'name="camera_name" value="$(arg camera_name)"' in launch
 assert "input_compressed_image_topic" not in launch
 assert "input_camera_info_topic" not in launch
 assert "_configured_intrinsics()" in camera_contract
-assert "intrinsics-\\d{8}T\\d{6}\\.\\d{6}Z\\.yaml" in camera_contract
-assert 'path.parent.parent.name != "sim"' in camera_contract
-assert 'document.get("camera_name", "")' in camera_contract
+assert "_selected_intrinsics" not in camera_contract
+assert "~intrinsic_file" not in camera_contract
+assert 'document.get("camera_name") != camera_name' in camera_contract
 assert "_CAMERA_NAME_PATTERN.fullmatch(camera_name)" in camera_contract
-assert "path.parent.name != camera_name" in camera_contract
+assert "~intrinsic_json" in camera_contract
 assert 'input.get("includeRgb", true)' in media_plugin
 assert 'input.get("requestKeyframe", false)' in media_plugin
 assert "fresh-snapshot" in media_plugin
@@ -192,7 +192,7 @@ assert '"camera-source", self._apply_camera_info_metadata' in camera_contract
 assert "CameraInfo()" not in camera_contract
 assert "expected_revision" in camera_contract
 assert "calibration-metadata" in camera_contract
-assert "(0.067, 0.0, 0.0)" in camera_contract
+assert "GAZEBO_LINK_TO_OPTICAL_TRANSLATION" in camera_contract
 
 assert "foxglove_msgs::CompressedVideo" in media_plugin
 assert "xgc_camera_msgs::FrameTiming" in media_plugin

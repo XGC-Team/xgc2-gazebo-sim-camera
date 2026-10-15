@@ -2,6 +2,7 @@
 """Exercise the deployed world-camera intrinsic identity contract without ROS."""
 
 import importlib.util
+import json
 import sys
 import tempfile
 import types
@@ -58,6 +59,7 @@ MODULE = _load_publisher_module()
 def _document(camera_name="usb_cam", complete=True):
     value = {
         "schema": "xgc2.camera.intrinsic.v1",
+        "distortion_model": "plumb_bob",
         "camera_name": camera_name,
         "image_width": 3840,
         "image_height": 2160,
@@ -83,63 +85,47 @@ def _document(camera_name="usb_cam", complete=True):
 
 
 class CameraIntrinsicSelectionTest(unittest.TestCase):
-    def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary.name)
-        self.directory = self.root / "sim" / "usb_cam"
-        self.directory.mkdir(parents=True)
-        self.file = self.directory / "intrinsics-20260830T010203.000000Z.yaml"
+    def configured(self, document, camera_name="usb_cam"):
+        params = {"~camera_profiles_file":str(PACKAGE / "config/world_camera_profiles.yaml"),
+                  "~camera_profile":"world_wide_4k30_110", "~camera_name":camera_name,
+                  "~intrinsic_json":json.dumps(document) if document else ""}
+        MODULE.rospy.get_param = lambda name, default=None: params.get(name, default)
+        return MODULE._configured_intrinsics()
 
-    def tearDown(self):
-        self.temporary.cleanup()
+    def test_accepts_matching_pinned_document_without_a_calibration_file(self):
+        width, height, matrix, distortion, model = self.configured(_document())
+        self.assertEqual((width,height),(3840,2160))
+        self.assertEqual(matrix,_document()["camera_matrix"]["data"])
+        self.assertEqual(distortion,[0.]*5)
+        self.assertEqual(model,"plumb_bob")
 
-    def write(self, document):
-        self.file.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+    def test_rejects_invalid_camera_identity(self):
+        for name in ("../outside","usb/cam","usb cam",".usb_cam"):
+            with self.subTest(name=name),self.assertRaisesRegex(ValueError,"camera_name"):
+                self.configured(_document(),name)
+        with self.assertRaisesRegex(ValueError,"identity"):
+            self.configured(_document("other"))
 
-    def test_accepts_complete_matching_timestamped_document(self):
-        self.write(_document())
-        camera_matrix, distortion, model = MODULE._selected_intrinsics(
-            str(self.file), (3840, 2160), "usb_cam"
-        )
-        self.assertEqual(len(camera_matrix), 9)
-        self.assertEqual(len(distortion), 5)
-        self.assertEqual(model, "plumb_bob")
+    def test_rejects_dimension_or_matrix_drift(self):
+        document=_document();document["image_width"]=640
+        with self.assertRaisesRegex(ValueError,"dimensions"):
+            self.configured(document)
+        document=_document();document["camera_matrix"]["data"]=[]
+        with self.assertRaisesRegex(ValueError,"data"):
+            self.configured(document)
 
-    def test_rejects_invalid_camera_name_before_using_the_path(self):
-        self.write(_document())
-        for camera_name in ("../outside", "usb/cam", "usb cam", ".usb_cam"):
-            with self.subTest(camera_name=camera_name), self.assertRaisesRegex(
-                ValueError, "camera_name"
-            ):
-                MODULE._selected_intrinsics(str(self.file), (3840, 2160), camera_name)
+    def test_rejects_invalid_focal_length_and_distortion_model(self):
+        document=_document();document["camera_matrix"]["data"][0]=0
+        with self.assertRaises(ValueError):self.configured(document)
+        document=_document();document["distortion_model"]="unknown"
+        with self.assertRaises(ValueError):self.configured(document)
 
-    def test_rejects_incomplete_or_mismatched_documents(self):
-        self.write(_document(complete=False))
-        with self.assertRaises(ValueError):
-            MODULE._selected_intrinsics(str(self.file), (3840, 2160), "usb_cam")
-        self.write(_document(camera_name="other"))
-        with self.assertRaisesRegex(ValueError, "camera_name"):
-            MODULE._selected_intrinsics(str(self.file), (3840, 2160), "usb_cam")
-
-    def test_rejects_the_physical_partition(self):
-        physical = self.root / "phy" / "usb_cam" / self.file.name
-        physical.parent.mkdir(parents=True)
-        physical.write_text(
-            yaml.safe_dump(_document(), sort_keys=False), encoding="utf-8"
-        )
-        with self.assertRaisesRegex(ValueError, "sim"):
-            MODULE._selected_intrinsics(str(physical), (3840, 2160), "usb_cam")
-
-    def test_rejects_a_symlink_that_resolves_outside_the_camera_partition(self):
-        outside = self.root / "outside" / self.file.name
-        outside.parent.mkdir()
-        outside.write_text(
-            yaml.safe_dump(_document(), sort_keys=False), encoding="utf-8"
-        )
-        selected = self.directory / "intrinsics-20260830T020304.000000Z.yaml"
-        selected.symlink_to(outside)
-        with self.assertRaises(ValueError):
-            MODULE._selected_intrinsics(str(selected), (3840, 2160), "usb_cam")
+    def test_uncalibrated_camera_keeps_product_profile_intrinsics(self):
+        width,height,matrix,distortion,model=self.configured(None)
+        self.assertEqual((width,height),(3840,2160))
+        self.assertGreater(matrix[0],0)
+        self.assertEqual(distortion,[0.]*5)
+        self.assertEqual(model,"plumb_bob")
 
 
 if __name__ == "__main__":

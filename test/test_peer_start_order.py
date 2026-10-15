@@ -194,6 +194,32 @@ class PeerStartOrderTest(unittest.TestCase):
                     process.stdout.close()
                 self.assertEqual(process.returncode, 0, (Path(directory) / "worker.log").read_text())
 
+    def test_close_cancels_a_held_discovery_before_joining(self):
+        import threading
+        module = _load_publisher_module()
+        import camera_peer
+        camera_peer.rospy = module.rospy
+        entered = threading.Event()
+        with tempfile.TemporaryDirectory() as directory:
+            endpoint = str(Path(directory) / "held.sock")
+            runtime = Runtime()
+            async def held(context, value):
+                entered.set()
+                await asyncio.sleep(30)
+            host = Host(endpoint, {("GET", "/v1/describe"): held}, runtime=runtime,
+                        instance_id="held-camera", discovery_routes={"/v1/describe"}).start()
+            peer = camera_peer.CameraPeer(endpoint, "fixture", "camera-source", lambda *_: None)
+            try:
+                self.assertTrue(entered.wait(2))
+                started = time.monotonic()
+                peer.close()
+                self.assertLess(time.monotonic() - started, 2)
+                self.assertFalse(peer._thread.is_alive())
+            finally:
+                peer.close()
+                host.close()
+                runtime.close()
+
     def test_source_late_and_restarted(self):
         self.exercise(1)
 

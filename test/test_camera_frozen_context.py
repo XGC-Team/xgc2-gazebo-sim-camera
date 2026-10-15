@@ -118,7 +118,15 @@ class FrozenWorldCameraTest(unittest.TestCase):
         simulation = ModuleType("xgc2_gazebo_scene.simulation_client")
         simulation.SimulationClient = Mock()
         with patch.dict(sys.modules, {sdk.__name__: sdk, simulation.__name__: simulation}):
-            runtime, _, _ = self.make_publisher(False, receipt)
+            runtime, _, _ = self.make_publisher(False)
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "owned-placement.json"
+                runtime._placement_file = str(path)
+                self.assertFalse(path.exists())
+                # Placement finishes after this metadata runtime has started.
+                path.write_text(json.dumps(receipt))
+                runtime.close()
+                self.assertFalse(path.exists())
             runtime.close()
             runtime.close()
             sdk.ServiceRef.from_dict.assert_called_once_with(receipt["world"])
@@ -129,6 +137,36 @@ class FrozenWorldCameraTest(unittest.TestCase):
                 {"generation": 7, "operation_timeout_ms": 3000}, method="DELETE")
             simulation.SimulationClient.return_value.close.assert_called_once_with()
             sdk.Runtime.return_value.close.assert_called_once_with()
+
+    def test_release_failure_remains_visible_after_shutdown_callback(self):
+        runtime, _, _ = self.make_publisher(False)
+        expected = RuntimeError("native generation release failed")
+        def fail(): raise expected
+        runtime._release_owned_resources = fail
+        with self.assertRaisesRegex(RuntimeError,"native generation release failed"):
+            runtime.close()
+        with self.assertRaisesRegex(RuntimeError,"native generation release failed"):
+            runtime.close()
+        self.assertIs(runtime._close_error,expected)
+        # The expected shutdown failure has been asserted; finish fixture cleanup.
+        runtime._close_error = None
+
+    def test_native_pose_is_realized_only_after_the_late_owned_receipt(self):
+        runtime, _, events = self.make_publisher(False)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "placement.json"
+            runtime._placement_file = str(path)
+            runtime._realize_placement()
+            self.assertEqual(runtime._translation, (7., 8., 9.))
+            receipt = {"cameraContext": {"cameraName":"world", "appliedLinkPose": {
+                "x":1., "y":2., "z":3., "roll":0., "pitch":0., "yaw":0.}}}
+            path.write_text(json.dumps(receipt))
+            runtime._realize_placement()
+            self.assertEqual(runtime._translation, (1., 2., 3.))
+            self.assertEqual(runtime._placement, receipt)
+            # This test concerns realization; no World entity was placed.
+            runtime._placement = {}
+            runtime._placement_file = ""
 
     def test_tf_send_failure_never_emits_record_success(self):
         runtime, _, events = self.make_publisher(False)
