@@ -17,12 +17,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare pinned calibration Python contract
+        run: .xgc2/scripts/prepare_calibration_contract.sh "$RUNNER_TEMP/calibration-contract"
       - name: Validate source and product contracts
         run: |
           docker run --rm \
             -e DEBIAN_FRONTEND=noninteractive \
             -e PYTHONPYCACHEPREFIX=/tmp/xgc2-gazebo-sim-camera-pycache \
             -v "$GITHUB_WORKSPACE:/workspace/repo:ro" \
+            -v "$RUNNER_TEMP/calibration-contract:/workspace/calibration-contract:ro" \
             ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full-noetic:1.0.0 bash -lc '
               set -euo pipefail
               install -d -m 0755 /etc/apt/keyrings
@@ -33,6 +36,7 @@ jobs:
               apt-get update
               apt-get install -y --no-install-recommends ros-noetic-xgc2-camera-calibration
               source /opt/ros/noetic/setup.bash
+              export PYTHONPATH="/workspace/calibration-contract/xgc_camera_calibration/src:${PYTHONPATH:-}"
               cd /workspace/repo
               .xgc2/scripts/check_package_compliance.sh
             '
@@ -47,12 +51,15 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare pinned calibration Python contract
+        run: .xgc2/scripts/prepare_calibration_contract.sh "$RUNNER_TEMP/calibration-contract"
       - name: Build, test, and package Debian artifact
         run: |
           install -d "$GITHUB_WORKSPACE/.ci/build-manifests"
           .xgc2/scripts/build_debs_in_docker.sh \
             --work-dir "$RUNNER_TEMP/xgc2-gazebo-sim-camera-${{ matrix.arch }}" \
             --output-dir "$GITHUB_WORKSPACE/debs" \
+            --calibration-contract-source "$RUNNER_TEMP/calibration-contract" \
             --skip-install-check
       - name: Create trusted build manifest
         run: |

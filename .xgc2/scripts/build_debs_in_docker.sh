@@ -7,6 +7,7 @@ DOCKER_IMAGE="${DOCKER_IMAGE:-ghcr.io/xgc-team/xgc2-images/xgc2-build-focal-full
 WORK_DIR="${WORK_DIR:-${REPO_ROOT}/.work/docker}"
 OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/debs}"
 INSTALL_CHECK="${INSTALL_CHECK:-true}"
+CALIBRATION_CONTRACT_SOURCE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -14,10 +15,17 @@ while [[ $# -gt 0 ]]; do
     --work-dir) WORK_DIR="$2"; shift 2 ;;
     --output-dir) OUTPUT_DIR="$2"; shift 2 ;;
     --skip-install-check) INSTALL_CHECK=false; shift ;;
+    --calibration-contract-source) CALIBRATION_CONTRACT_SOURCE="$2"; shift 2 ;;
     *) echo "unknown argument: $1" >&2; exit 1 ;;
   esac
 done
 mkdir -p "${WORK_DIR}" "${OUTPUT_DIR}"
+calibration_mount=()
+if [[ -n "${CALIBRATION_CONTRACT_SOURCE}" ]]; then
+  CALIBRATION_CONTRACT_SOURCE="$(realpath "${CALIBRATION_CONTRACT_SOURCE}")"
+  test -f "${CALIBRATION_CONTRACT_SOURCE}/xgc_camera_calibration/src/xgc_camera_calibration/camera_initial_pose.py"
+  calibration_mount=(-v "${CALIBRATION_CONTRACT_SOURCE}:/workspace/calibration-contract:ro")
+fi
 docker pull "${DOCKER_IMAGE}"
 docker run --rm \
   -e DEBIAN_FRONTEND=noninteractive \
@@ -26,6 +34,7 @@ docker run --rm \
   -v "${REPO_ROOT}:/workspace/repo:ro" \
   -v "${WORK_DIR}:/workspace/work" \
   -v "${OUTPUT_DIR}:/workspace/out" \
+  "${calibration_mount[@]}" \
   "${DOCKER_IMAGE}" bash -lc '
     set -euo pipefail
 
@@ -65,7 +74,14 @@ docker run --rm \
     catkin_make -j2
     # The Python tests import the just-built scripts through the source overlay.
     source /workspace/work/devel/setup.bash
-    LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x720x24" \
+    contract_python=""
+    if [[ -d /workspace/calibration-contract ]]; then
+      contract_python=/workspace/calibration-contract/xgc_camera_calibration/src:
+    else
+      calibration_version="$(dpkg-query -W -f '\''${Version}'\'' ros-noetic-xgc2-camera-calibration)"
+      dpkg --compare-versions "${calibration_version}" ge 0.4.0-3
+    fi
+    PYTHONPATH="${contract_python}${PYTHONPATH:-}" LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x720x24" \
       catkin_make -j2 run_tests_gazebo_sim_camera
     catkin_test_results
     DESTDIR=/workspace/work/install-root catkin_make -j2 install -DCMAKE_INSTALL_PREFIX=/opt/ros/noetic -DCATKIN_ENABLE_TESTING=OFF
