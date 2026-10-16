@@ -212,7 +212,7 @@ roslaunch --wait gazebo_sim_camera static_camera.launch \
 
 Shared runtime/model inputs (profile file, profile, dimensions/FOV overrides,
 source ID, link/optical frames and truth pose) must match. The publisher alone
-uses `camera_name`, `intrinsic_file`, `parent_frame`, `mode`, `publish_truth_tf`,
+uses `camera_name`, `intrinsic_json`, `parent_frame`, `mode`, `publish_truth_tf`,
 `gt_camera_link_frame`, `gt_optical_frame`, `calibration_root`,
 `resolved_extrinsic_json`, `frame_roles_json`, `publish_xgc_contract`,
 `xgc_transform_topic`, `use_sim_time` and `python_executable`. These are not
